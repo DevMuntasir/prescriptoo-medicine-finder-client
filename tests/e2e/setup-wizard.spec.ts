@@ -49,7 +49,7 @@ test('medicine setup retains entries, stages pharmacies and saves one reviewed p
   await dialog.getByLabel('Pharmacy name', { exact: true }).fill('New Pharmacy');
   await dialog.getByLabel('Address', { exact: true }).fill('Road 2');
   await dialog.getByRole('button', { name: 'Use map centre as entrance' }).click();
-  await expect(dialog.getByText('✓ Locality: Dhanmondi')).toBeVisible();
+  await expect(dialog.getByText('✓ Area: Dhanmondi')).toBeVisible();
   await dialog.getByRole('button', { name: 'Use this pharmacy' }).click();
   expect(saved).toHaveLength(0);
   await dialog.getByRole('button', { name: 'Next: review' }).click();

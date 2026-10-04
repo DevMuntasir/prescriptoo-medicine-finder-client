@@ -8,6 +8,8 @@ type Row = Record<string, unknown>;
 type Geometry = { type: 'Polygon'; coordinates: number[][][] };
 const ring = (g: Geometry) => g.coordinates[0]?.slice(0, -1) || [];
 export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () => void }) {
+  const creating = !area.id;
+  const [name, setName] = useState('');
   const existing = area.geometry as {
     type: string;
     coordinates: number[][][] | number[][][][];
@@ -32,12 +34,12 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
   const container = useRef<HTMLDivElement>(null),
     [ready, setReady] = useState<{ L: typeof Leaflet; map: Leaflet.Map }>(),
     fitted = useRef(false),
-    [drawing, setDrawing] = useState(false);
+    [drawing, setDrawing] = useState(!area.geometry);
   useEffect(() => {
     let active = true;
     api<Row[]>('admin/areas')
       .then((rows) => {
-        if (active) setLocalities(rows.filter((r) => r.type === 'locality' && r.id !== area.id));
+        if (active) setLocalities(rows.filter((r) => r.geometry && r.id !== area.id));
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -94,7 +96,7 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     if (!drawing)
       vertices.forEach((p, index) => {
         const marker = L.marker([p[1], p[0]], {
-          draggable: true,
+          draggable: !busy,
           title: `Boundary vertex ${index + 1}`,
           icon: L.divIcon({
             className: 'entrance-pin',
@@ -120,9 +122,9 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     return () => {
       layers.remove();
     };
-  }, [ready, draft, drawing]);
+  }, [ready, draft, drawing, busy]);
   useEffect(() => {
-    if (!ready || !drawing) return;
+    if (!ready || !drawing || busy) return;
     const pick = (e: Leaflet.LeafletMouseEvent) => {
       let g: Geometry;
       try {
@@ -148,17 +150,33 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     return () => {
       ready.map.off('click', pick);
     };
-  }, [ready, drawing, draft]);
+  }, [ready, drawing, draft, busy]);
   async function impact() {
     setBusy(true);
     setError('');
     try {
-      setPreview(
-        await api(`admin/areas/${area.id}/preview`, {
+      const geometry = JSON.parse(draft) as Geometry;
+      if (ring(geometry).length < 3) throw new Error('Mark at least three corners on the map.');
+      if (creating) {
+        if (!name.trim()) throw new Error('Enter an area name.');
+        await api('admin/areas', { method: 'POST', body: json({ nameEn: name.trim(), geometry }) });
+        onClose();
+        return;
+      }
+      const result = await api<NonNullable<typeof preview>>(`admin/areas/${area.id}/preview`, {
+        method: 'POST',
+        body: json({ revision: area.revision, geometry }),
+      });
+      if (result.affected.length) {
+        setDrawing(false);
+        setPreview(result);
+      } else {
+        await api(`admin/areas/${area.id}/commit`, {
           method: 'POST',
-          body: json({ revision: area.revision, geometry: JSON.parse(draft) }),
-        }),
-      );
+          body: json({ previewToken: result.previewToken, assignments: [] }),
+        });
+        onClose();
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -206,11 +224,32 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     <Modal
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !busy) onClose();
       }}
-      title={`Boundary · ${area.name_en}`}
+      title={creating ? 'Add area' : `Boundary · ${area.name_en}`}
     >
-      <div className="live-boundary-workbench">
+      <fieldset
+        className="live-boundary-workbench"
+        disabled={busy}
+        style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+      >
+        {creating && (
+          <label>
+            Area name
+            <input
+              autoFocus
+              required
+              maxLength={250}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Dhanmondi"
+            />
+          </label>
+        )}
+        <p className="small muted">
+          Click at least three corners on the map, then save. Pharmacies inside this boundary will
+          use this area.
+        </p>
         <div className="live-map" ref={container} />
         <div className="live-admin-tools">
           <button className="button button-outline" onClick={() => setDrawing(!drawing)}>
@@ -227,30 +266,37 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
           </button>
         </div>
         <p className="small muted">
-          Draw by clicking the map; drag editable vertices to adjust. Shared edges are allowed.
-          Sibling interiors must not overlap. Without a configured map, paste licensed GeoJSON
-          below.
+          Finish drawing to drag corners and adjust the boundary. Adjacent areas can share an edge.
         </p>
-        <label>
-          Owned boundary GeoJSON
-          <textarea
-            className="live-boundary-json"
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              setPreview(undefined);
-            }}
-          />
-        </label>
-        <button className="button" disabled={busy} onClick={() => void impact()}>
-          Validate & preview impact
-        </button>
+        <details>
+          <summary>Advanced: import boundary</summary>
+          <label>
+            Boundary GeoJSON
+            <textarea
+              className="live-boundary-json"
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setPreview(undefined);
+              }}
+            />
+          </label>
+        </details>
+        {!preview && (
+          <button
+            className="button"
+            disabled={busy || (creating && !name.trim())}
+            onClick={() => void impact()}
+          >
+            {busy ? 'Saving…' : creating ? 'Save area' : 'Save boundary'}
+          </button>
+        )}
         {preview && (
           <section>
             <h3>{preview.affected.length} affected entrances</h3>
             {preview.affected.map((r) => (
               <label key={r.kind + r.id}>
-                Replacement locality for {r.kind} {r.id.slice(0, 8)}
+                Replacement area for {r.kind} {r.id.slice(0, 8)}
                 <select
                   value={assignments[r.kind + r.id] || ''}
                   onChange={(e) =>
@@ -267,20 +313,20 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
               </label>
             ))}
             <p className="muted">
-              All boundary and assignment changes commit together. A stale record requires another
-              preview.
+              These entrances would fall outside the new boundary. Choose an area covering each
+              entrance to save.
             </p>
             <button
               className="button"
               disabled={busy || preview.affected.some((r) => !assignments[r.kind + r.id])}
               onClick={() => void commit()}
             >
-              Commit boundary & assignments
+              Save boundary & move entrances
             </button>
           </section>
         )}
         {error && <p role="alert">{error}</p>}
-      </div>
+      </fieldset>
     </Modal>
   );
 }

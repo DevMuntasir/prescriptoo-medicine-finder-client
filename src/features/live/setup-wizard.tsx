@@ -50,7 +50,7 @@ function PharmacyEntry({
         setLocalityId(result.length === 1 ? result[0].id : '');
         if (!result.length)
           setError(
-            'This pin is outside your configured localities. Move it inside a supported area or ask an administrator to configure the area.',
+            'No supported area covers this pin. Add a boundary in Areas & boundaries, or move the pin inside an existing area.',
           );
       })
       .catch((e) => {
@@ -106,15 +106,15 @@ function PharmacyEntry({
       <EntrancePicker latitude={point?.latitude} longitude={point?.longitude} onPick={pick} />
       <div aria-live="polite">
         {checking ? (
-          <p>Finding the locality…</p>
+          <p>Finding the area…</p>
         ) : areas.length === 1 ? (
-          <p className="setup-locality">✓ Locality: {areas[0].name_en}</p>
+          <p className="setup-locality">✓ Area: {areas[0].name_en}</p>
         ) : null}
         {areas.length > 1 && (
           <label>
-            This pin touches more than one locality. Choose the pharmacy’s locality
+            This pin touches more than one area. Choose the pharmacy’s area
             <select required value={localityId} onChange={(e) => setLocalityId(e.target.value)}>
-              <option value="">Choose locality</option>
+              <option value="">Choose area</option>
               {areas.map((a) => (
                 <option value={a.id} key={a.id}>
                   {a.name_en}

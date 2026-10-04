@@ -334,10 +334,8 @@ export function LiveAdmin({ path }: { path: string[] }) {
       { key: 'addressBn', label: 'Address in Bengali', optional: true },
       {
         key: 'localityId',
-        label: 'Locality',
-        options: options('areas').filter(
-          (o) => (choices.areas || []).find((r) => r.id === o.value)?.type === 'locality',
-        ),
+        label: 'Area',
+        options: options('areas'),
       },
       { key: 'latitude', label: 'Entrance latitude', type: 'number' },
       { key: 'longitude', label: 'Entrance longitude', type: 'number' },
@@ -356,10 +354,8 @@ export function LiveAdmin({ path }: { path: string[] }) {
       { key: 'doctorId', label: 'Doctor', options: options('doctors') },
       {
         key: 'localityId',
-        label: 'Locality',
-        options: options('areas').filter(
-          (o) => (choices.areas || []).find((r) => r.id === o.value)?.type === 'locality',
-        ),
+        label: 'Area',
+        options: options('areas'),
       },
       { key: 'addressEn', label: 'Address', optional: true },
       { key: 'latitude', label: 'Latitude (optional)', type: 'number', optional: true },
@@ -380,20 +376,7 @@ export function LiveAdmin({ path }: { path: string[] }) {
       },
       { key: 'active', label: 'Active mapping', type: 'checkbox' },
     ],
-    areas: [
-      ...nameFields,
-      {
-        key: 'type',
-        label: 'Area type',
-        options: ['division', 'district', 'thana', 'locality'].map((value) => ({
-          value,
-          label: value,
-        })),
-      },
-      { key: 'parentId', label: 'Parent area', options: options('areas'), optional: true },
-      { key: 'source', label: 'Boundary data source', optional: true },
-      { key: 'license', label: 'Data licence', optional: true },
-    ],
+    areas: [],
     qrs: [
       { key: 'medicineId', label: 'Medicine', options: options('medicines') },
       {
@@ -464,6 +447,10 @@ export function LiveAdmin({ path }: { path: string[] }) {
     ],
   };
   async function edit(row?: Row) {
+    if (section === 'areas') {
+      setBoundary(row || {});
+      return;
+    }
     if (
       !row &&
       (section === 'pharmacies' ||
@@ -909,7 +896,11 @@ export function LiveAdmin({ path }: { path: string[] }) {
                           {s(r, 'generic_en') ||
                             s(r, 'address_en') ||
                             s(r, 'specialty') ||
-                            s(r, 'type') ||
+                            (section === 'areas'
+                              ? r.geometry
+                                ? 'Boundary configured'
+                                : 'Boundary needed'
+                              : s(r, 'type')) ||
                             s(r, 'pharmacy_name') ||
                             s(r, 'stock_status') ||
                             s(r, 'email')}
