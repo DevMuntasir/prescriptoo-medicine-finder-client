@@ -9,6 +9,7 @@ import { BoundaryWorkbench } from './boundary';
 import { EntrancePicker } from './entrance-picker';
 import { SetupWizard } from './setup-wizard';
 import { QRCardPreview } from './qr-card-preview';
+import { MedicinePharmacies } from './medicine-pharmacies';
 type Row = Record<string, unknown>;
 const s = (row: Row, key: string) => String(row[key] ?? '');
 const modules = [
@@ -97,6 +98,7 @@ export function LiveAdmin({ path }: { path: string[] }) {
   const [editing, setEditing] = useState<Row>();
   const [open, setOpen] = useState(false);
   const [wizard, setWizard] = useState<'medicine' | 'pharmacy'>();
+  const [mappingMedicine, setMappingMedicine] = useState<Row>();
   const [form, setForm] = useState(emptyForm);
   const [choices, setChoices] = useState<Record<string, Row[]>>({});
   const [offset, setOffset] = useState(0);
@@ -920,6 +922,15 @@ export function LiveAdmin({ path }: { path: string[] }) {
                         </td>
                         <td>
                           <div className="live-row-actions">
+                            {section === 'medicines' &&
+                              !r.archived_at &&
+                              allowed('mappings.read') &&
+                              allowed('mappings.write') &&
+                              allowed('pharmacies.read') && (
+                                <button onClick={() => setMappingMedicine(r)}>
+                                  Add pharmacies
+                                </button>
+                              )}
                             {allowed(`${section}.write`) && !['qrs', 'areas'].includes(section) && (
                               <button onClick={() => void edit(r)}>Edit</button>
                             )}
@@ -1011,6 +1022,19 @@ export function LiveAdmin({ path }: { path: string[] }) {
               </a>
             )}
           </div>
+        )}
+        {mappingMedicine && (
+          <MedicinePharmacies
+            key={s(mappingMedicine, 'id')}
+            medicineId={s(mappingMedicine, 'id')}
+            medicineName={s(mappingMedicine, 'name_en')}
+            onClose={() => setMappingMedicine(undefined)}
+            onSaved={() => {
+              setMappingMedicine(undefined);
+              setNotice('Pharmacy locations added successfully.');
+              void reload();
+            }}
+          />
         )}
         {wizard && (
           <SetupWizard
