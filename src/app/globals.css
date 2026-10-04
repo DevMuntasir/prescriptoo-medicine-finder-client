@@ -4862,6 +4862,18 @@ td select {
 }
 
 /* Keep Leaflet panes inside the map and preserve marker centering. */
-.live-map, .entrance-map { isolation: isolate; }
-.live-map-fallback { z-index: 800; inset: auto 8px 28px; padding: 8px; pointer-events: none; border-radius: 8px; }
-.live-map-pin { display: grid; place-items: center; }
+.live-map,
+.entrance-map {
+  isolation: isolate;
+}
+.live-map-fallback {
+  z-index: 800;
+  inset: auto 8px 28px;
+  padding: 8px;
+  pointer-events: none;
+  border-radius: 8px;
+}
+.live-map-pin {
+  display: grid;
+  place-items: center;
+}

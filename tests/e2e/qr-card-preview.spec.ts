@@ -13,9 +13,10 @@ test('new QR opens its actual card PDF and failed previews can be retried', asyn
       printAttempts++;
       data = { id: 'job', status: 'queued' };
     } else if (path.endsWith('/jobs/job')) {
-      data = printAttempts === 1
-        ? { id: 'job', status: 'failed' }
-        : { id: 'job', status: 'complete', file_id: 'actual-card' };
+      data =
+        printAttempts === 1
+          ? { id: 'job', status: 'failed' }
+          : { id: 'job', status: 'complete', file_id: 'actual-card' };
     } else if (path.endsWith('/files/actual-card')) {
       return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF' });
     } else if (path.endsWith('/qrs')) {
@@ -35,7 +36,10 @@ test('new QR opens its actual card PDF and failed previews can be retried', asyn
   await expect(dialog.getByRole('alert')).toContainText('Card generation failed');
   await dialog.getByRole('button', { name: 'Retry preview' }).click();
   await expect(dialog.getByTitle('Actual QR card')).toHaveAttribute('src', /^blob:/);
-  await expect(dialog.getByRole('link', { name: 'Download card PDF' })).toHaveAttribute('download', `qr-card-${qr.id}.pdf`);
+  await expect(dialog.getByRole('link', { name: 'Download card PDF' })).toHaveAttribute(
+    'download',
+    `qr-card-${qr.id}.pdf`,
+  );
   await dialog.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'Preview / print card' }).click();
   await expect(dialog.getByTitle('Actual QR card')).toHaveAttribute('src', /^blob:/);
