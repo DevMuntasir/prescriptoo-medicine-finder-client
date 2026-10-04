@@ -63,7 +63,7 @@ test('area setup needs only a name, map boundary and one save', async ({ page })
   await expect(map).toBeVisible();
   await map.click({ position: { x: 150, y: 100 } });
   await map.click({ position: { x: 250, y: 100 } });
-  await map.click({ position: { x: 250, y: 200 } });
+  await map.click({ position: { x: 250, y: 160 } });
   await modal.getByRole('button', { name: 'Save area', exact: true }).click();
   await expect(modal).not.toBeVisible();
   expect(saved?.nameEn).toBe('Dhanmondi');
