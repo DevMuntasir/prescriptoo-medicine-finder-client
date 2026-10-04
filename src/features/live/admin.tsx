@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/primitives';
 import { BoundaryWorkbench } from './boundary';
 import { EntrancePicker } from './entrance-picker';
 import { SetupWizard } from './setup-wizard';
+import { QRCardPreview } from './qr-card-preview';
 type Row = Record<string, unknown>;
 const s = (row: Row, key: string) => String(row[key] ?? '');
 const modules = [
@@ -104,6 +105,7 @@ export function LiveAdmin({ path }: { path: string[] }) {
   const queryKey = `${section}:${offset}:${search}`;
   const [boundary, setBoundary] = useState<Row>();
   const [job, setJob] = useState<Row>();
+  const [previewQrId, setPreviewQrId] = useState<string>();
   const [selectedQrs, setSelectedQrs] = useState<string[]>([]);
   const [from, setFrom] = useState(
     new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }),
@@ -540,6 +542,7 @@ export function LiveAdmin({ path }: { path: string[] }) {
         body: json(input),
       });
       setOpen(false);
+      if (section === 'qrs' && !editing) setPreviewQrId(String(saved.id));
       setNotice(
         saved.temporaryPassword
           ? `Temporary password (shown once): ${saved.temporaryPassword}`
@@ -951,7 +954,9 @@ export function LiveAdmin({ path }: { path: string[] }) {
                             )}
                             {section === 'qrs' && (
                               <>
-                                <button onClick={() => void action(r, 'print')}>Print card</button>
+                                <button onClick={() => setPreviewQrId(s(r, 'id'))}>
+                                  Preview / print card
+                                </button>
                                 {allowed('qrs.write') && (
                                   <button onClick={() => void confirm(r, 'toggle')}>
                                     {r.active ? 'Deactivate' : 'Reactivate'}
@@ -989,6 +994,13 @@ export function LiveAdmin({ path }: { path: string[] }) {
               )}
             </>
           )
+        )}
+        {section === 'qrs' && previewQrId && (
+          <QRCardPreview
+            key={previewQrId}
+            qrId={previewQrId}
+            onClose={() => setPreviewQrId(undefined)}
+          />
         )}
         {job && (
           <div className="info-banner">

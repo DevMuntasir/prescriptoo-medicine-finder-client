@@ -4201,6 +4201,19 @@ td select {
   padding: 0;
   min-width: 0;
 }
+.qr-card-preview {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.qr-card-preview iframe {
+  width: 100%;
+  height: clamp(260px, 48vh, 430px);
+  border: 1px solid #dce4e3;
+  border-radius: 12px;
+  background: #f4f7f6;
+}
+
 /* Functional QR finder */
 .medicine-symbol {
   display: flex;
@@ -4849,6 +4862,18 @@ td select {
 }
 
 /* Keep Leaflet panes inside the map and preserve marker centering. */
-.live-map, .entrance-map { isolation: isolate; }
-.live-map-fallback { z-index: 800; inset: auto 8px 28px; padding: 8px; pointer-events: none; border-radius: 8px; }
-.live-map-pin { display: grid; place-items: center; }
+.live-map,
+.entrance-map {
+  isolation: isolate;
+}
+.live-map-fallback {
+  z-index: 800;
+  inset: auto 8px 28px;
+  padding: 8px;
+  pointer-events: none;
+  border-radius: 8px;
+}
+.live-map-pin {
+  display: grid;
+  place-items: center;
+}
