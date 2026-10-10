@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('pharmacy entrance selection, drag, manual correction and save payload', async ({ page }) => {
+test('pharmacy entrance manual fallback and save payload when Google is unavailable', async ({ page }) => {
   let saved: Record<string, unknown> | undefined;
   await page.route('**/api/v1/admin/**', async (route) => {
     const url = new URL(route.request().url());
@@ -35,31 +35,16 @@ test('pharmacy entrance selection, drag, manual correction and save payload', as
         : { items: [], total: 0 };
     await route.fulfill({ json: { data } });
   });
-  // Deterministic map interaction: do not depend on the external tile service.
-  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
+  await page.route('https://maps.googleapis.com/maps/api/js**', (route) => route.abort());
   await page.goto('/admin/pharmacies');
   await page.getByRole('button', { name: 'Add pharmacy', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('button', { name: 'Use map centre as entrance' })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Use map centre as entrance' })).toBeDisabled();
   await dialog.getByLabel('Pharmacy name', { exact: true }).fill('Test pharmacy');
   await dialog.getByLabel('Address', { exact: true }).fill('Test entrance');
-  const map = dialog.locator('.entrance-map');
-  await map.click({ position: { x: 170, y: 155 } });
   await dialog.getByText('Enter entrance coordinates manually', { exact: true }).click();
   const lat = dialog.getByLabel('Entrance latitude', { exact: true });
   const lng = dialog.getByLabel('Entrance longitude', { exact: true });
-  await expect(lat).not.toHaveValue('');
-  await expect(lng).not.toHaveValue('');
-  const before = await lng.inputValue();
-  const pin = dialog.locator('.entrance-pin');
-  await expect(pin).toBeVisible();
-  await pin.scrollIntoViewIfNeeded();
-  const box = (await pin.boundingBox())!;
-  await page.mouse.move(box.x + 14, box.y + 14);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 54, box.y + 24, { steps: 10 });
-  await page.mouse.up();
-  await expect(lng).not.toHaveValue(before);
   await lat.fill('23.78');
   await lng.fill('90.38');
   await dialog.getByRole('button', { name: 'Use this pharmacy', exact: true }).click();
@@ -70,6 +55,5 @@ test('pharmacy entrance selection, drag, manual correction and save payload', as
   await page.getByRole('button', { name: 'Add pharmacy', exact: true }).click();
   await expect(dialog.getByText('No entrance selected yet.')).toBeVisible();
   await expect(dialog.locator('.entrance-pin')).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Use map centre as entrance' }).click();
-  await expect(dialog.locator('.entrance-pin')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Use map centre as entrance' })).toBeDisabled();
 });

@@ -7,7 +7,7 @@ let slug = '',
 const email = process.env.E2E_ADMIN_EMAIL || 'admin@example.test';
 const password = process.env.E2E_ADMIN_PASSWORD || 'Local-test-password-2026';
 test.beforeEach(async ({ page }) => {
-  await page.route('https://tile.openstreetmap.org/**', route => route.abort());
+  await page.route('https://maps.googleapis.com/maps/api/js**', route => route.abort());
 });
 test.beforeAll(async ({ request }) => {
   const login = await request.post('/api/v1/auth/sign-in/email', {
@@ -74,9 +74,9 @@ test('mobile QR uses real GPS/search, selects exact shop and handles missing rou
   );
   await page.getByRole('button', { name: 'পথ দেখুন', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Turn-by-turn directions are not enabled yet');
-  await expect(page.getByRole('link', { name: 'OpenStreetMap-এ দোকান দেখুন' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Google Maps-এ নেভিগেশন খুলুন' })).toHaveAttribute(
     'href',
-    /mlat=23.78&mlon=90.38/,
+    /destination=23.78%2C90.38|destination=23.78,90.38/,
   );
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'E2E Entrance ' + suffix })).toBeVisible();

@@ -90,8 +90,8 @@ export function Privacy({ terms = false }: { terms?: boolean }) {
           </p>
           <p>
             {tx(
-              'Maps use Leaflet and OpenStreetMap. Turn-by-turn directions are not enabled yet.',
-              'মানচিত্রে Leaflet ও OpenStreetMap ব্যবহার করা হয়। ধাপে ধাপে পথনির্দেশনা এখনো চালু হয়নি।',
+              'Maps and turn-by-turn routes use Google Maps Platform when configured. Route times and walking coverage are estimates, not guarantees.',
+              'কনফিগার করা থাকলে মানচিত্র ও ধাপে ধাপে পথ Google Maps Platform ব্যবহার করে। পথের সময় ও হাঁটার কভারেজ আনুমানিক, নিশ্চিত নয়।',
             )}
           </p>
           <Link href={`/${locale}/privacy`}>{tx('Privacy choices', 'গোপনীয়তার পছন্দ')}</Link>
@@ -141,9 +141,18 @@ export function Privacy({ terms = false }: { terms?: boolean }) {
             </p>
             <p>
               {tx(
-                'OpenStreetMap receives map tile requests, your IP address and the site origin. Tiles reflect the area you view; medicine and doctor identifiers are not sent.',
-                'OpenStreetMap মানচিত্রের টাইল অনুরোধ, আপনার IP ঠিকানা ও সাইটের অরিজিন পায়। টাইল থেকে দেখা এলাকার ধারণা পাওয়া যায়; ওষুধ ও চিকিৎসকের ID পাঠানো হয় না।',
+                'Google receives map and route requests, your IP address, the site origin, and the route endpoints needed to provide directions. Medicine and doctor identifiers are not sent. Google’s Terms of Service and Privacy Policy also apply.',
+                'মানচিত্র ও পথ দেখাতে Google ম্যাপ/রুট অনুরোধ, আপনার IP ঠিকানা, সাইটের অরিজিন এবং প্রয়োজনীয় শুরু ও গন্তব্য পায়। ওষুধ বা চিকিৎসকের ID পাঠানো হয় না। Google-এর ব্যবহারের শর্ত ও গোপনীয়তা নীতিও প্রযোজ্য।',
               )}
+            </p>
+            <p>
+              <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">
+                Google Terms
+              </a>{' '}
+              ·{' '}
+              <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">
+                Google Privacy Policy
+              </a>
             </p>
           </section>
           <section className="legal-card">

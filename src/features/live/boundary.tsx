@@ -2,8 +2,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/ui/primitives';
 import { api, json } from '@/lib/api';
-import type * as Leaflet from 'leaflet';
-import { addTiles } from './tiles';
+import {
+  googleMapsAuthenticationFailed,
+  googleMapId,
+  loadGoogleMaps,
+  onGoogleMapsAuthenticationFailure,
+  toLatLngLiteral,
+} from '@/lib/google-maps';
 type Row = Record<string, unknown>;
 type Geometry = { type: 'Polygon'; coordinates: number[][][] };
 const ring = (g: Geometry) => g.coordinates[0]?.slice(0, -1) || [];
@@ -32,11 +37,19 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     [localities, setLocalities] = useState<Row[]>([]),
     [assignments, setAssignments] = useState<Record<string, string>>({});
   const container = useRef<HTMLDivElement>(null),
-    [ready, setReady] = useState<{ L: typeof Leaflet; map: Leaflet.Map }>(),
+    [ready, setReady] = useState<{
+      map: google.maps.Map;
+      AdvancedMarkerElement: typeof google.maps.marker.AdvancedMarkerElement;
+    }>(),
     fitted = useRef(false),
     [drawing, setDrawing] = useState(!area.geometry);
   useEffect(() => {
     let active = true;
+    const stopListeningForAuthenticationFailure = onGoogleMapsAuthenticationFailure((cause) => {
+      if (!active) return;
+      setReady(undefined);
+      setError(cause.message + ' Edit GeoJSON below.');
+    });
     api<Row[]>('admin/areas')
       .then((rows) => {
         if (active) setLocalities(rows.filter((r) => r.geometry && r.id !== area.id));
@@ -44,26 +57,31 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
       .catch((e) => {
         if (active) setError(e.message);
       });
-    let map: Leaflet.Map | undefined;
-    let observer: ResizeObserver | undefined;
-    void import('leaflet')
-      .then((L) => {
-        if (!active || !container.current) return;
-        map = L.map(container.current, { scrollWheelZoom: false }).setView([23.78, 90.4], 14);
-        addTiles(L, map, () => {
-          if (active) setError('Map tiles unavailable. You can still edit GeoJSON below.');
+    void loadGoogleMaps('en')
+      .then(async () => {
+        const [{ Map }, { AdvancedMarkerElement }] = await Promise.all([
+          google.maps.importLibrary('maps') as Promise<google.maps.MapsLibrary>,
+          google.maps.importLibrary('marker') as Promise<google.maps.MarkerLibrary>,
+        ]);
+        if (!active || googleMapsAuthenticationFailed() || !container.current) return;
+        const map = new Map(container.current, {
+          center: { lat: 23.78, lng: 90.4 },
+          zoom: 14,
+          mapId: googleMapId(),
+          clickableIcons: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          gestureHandling: 'cooperative',
         });
-        observer = new ResizeObserver(() => map?.invalidateSize());
-        observer.observe(container.current);
-        setReady({ L, map });
+        setReady({ map, AdvancedMarkerElement });
       })
-      .catch(() => {
-        if (active) setError('Map unavailable. Edit GeoJSON below.');
+      .catch((cause: Error) => {
+        if (active) setError(cause.message + ' Edit GeoJSON below.');
       });
     return () => {
       active = false;
-      observer?.disconnect();
-      map?.remove();
+      stopListeningForAuthenticationFailure();
       fitted.current = false;
     };
   }, [area.id]);
@@ -76,56 +94,73 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
     } catch {
       return;
     }
-    const { L, map } = ready;
+    const { map, AdvancedMarkerElement } = ready;
     const valid = (p: number[]) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
     if (!g.coordinates.every((r) => Array.isArray(r) && r.every(valid))) return;
     const vertices = ring(g);
-    const layers = L.layerGroup().addTo(map);
-    const shape = L.polygon(
-      g.coordinates.map((r) => r.map((p) => [p[1], p[0]] as Leaflet.LatLngTuple)),
-      {
-        color: '#14796c',
-        fillOpacity: 0.2,
-        interactive: false,
-      },
-    ).addTo(layers);
-    if (!fitted.current && shape.getBounds().isValid()) {
-      map.fitBounds(shape.getBounds(), { padding: [24, 24], maxZoom: 16 });
+    const shape = vertices.length
+      ? new google.maps.Polygon({
+          map,
+          paths: g.coordinates.map((r) => r.map((p) => ({ lat: p[1]!, lng: p[0]! }))),
+          strokeColor: '#14796c',
+          strokeWeight: 2,
+          fillOpacity: 0.2,
+          clickable: false,
+        })
+      : undefined;
+    const bounds = new google.maps.LatLngBounds();
+    vertices.forEach((point) => bounds.extend({ lat: point[1]!, lng: point[0]! }));
+    if (!fitted.current && !bounds.isEmpty()) {
+      map.fitBounds(bounds, 24);
+      google.maps.event.addListenerOnce(map, 'idle', () => {
+        if ((map.getZoom() ?? 0) > 16) map.setZoom(16);
+      });
       fitted.current = true;
     }
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+    const listeners: google.maps.MapsEventListener[] = [];
     if (!drawing)
       vertices.forEach((p, index) => {
-        const marker = L.marker([p[1], p[0]], {
-          draggable: !busy,
+        const pin = document.createElement('div');
+        pin.className = 'entrance-pin';
+        pin.innerHTML = '<span></span>';
+        const marker = new AdvancedMarkerElement({
+          map,
+          position: { lat: p[1]!, lng: p[0]! },
+          gmpDraggable: !busy,
           title: `Boundary vertex ${index + 1}`,
-          icon: L.divIcon({
-            className: 'entrance-pin',
-            html: '<span></span>',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-          }),
-        }).addTo(layers);
-        marker.on('dragend', () => {
-          const point = marker.getLatLng().wrap();
-          const next = vertices.map((v, i) => (i === index ? [point.lng, point.lat] : v));
-          if (next.length) next.push(next[0]);
-          setPreview(undefined);
-          setDraft(
-            JSON.stringify(
-              { type: 'Polygon', coordinates: [next, ...g.coordinates.slice(1)] },
-              null,
-              2,
-            ),
-          );
+          content: pin,
         });
+        markers.push(marker);
+        listeners.push(
+          marker.addListener('dragend', () => {
+            if (!marker.position) return;
+            const point = toLatLngLiteral(marker.position);
+            const next = vertices.map((value, i) =>
+              i === index ? [point.lng, point.lat] : value,
+            );
+            if (next.length) next.push(next[0]);
+            setPreview(undefined);
+            setDraft(
+              JSON.stringify(
+                { type: 'Polygon', coordinates: [next, ...g.coordinates.slice(1)] },
+                null,
+                2,
+              ),
+            );
+          }),
+        );
       });
     return () => {
-      layers.remove();
+      shape?.setMap(null);
+      listeners.forEach((listener) => listener.remove());
+      markers.forEach((marker) => (marker.map = null));
     };
   }, [ready, draft, drawing, busy]);
   useEffect(() => {
     if (!ready || !drawing || busy) return;
-    const pick = (e: Leaflet.LeafletMouseEvent) => {
+    const listener = ready.map.addListener('click', (event: google.maps.MapMouseEvent) => {
+      if (!event.latLng) return;
       let g: Geometry;
       try {
         g = JSON.parse(draft);
@@ -134,8 +169,7 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
         g = { type: 'Polygon', coordinates: [[]] };
       }
       const points = ring(g);
-      const p = e.latlng.wrap();
-      points.push([p.lng, p.lat]);
+      points.push([event.latLng.lng(), event.latLng.lat()]);
       points.push(points[0]);
       setPreview(undefined);
       setDraft(
@@ -145,11 +179,8 @@ export function BoundaryWorkbench({ area, onClose }: { area: Row; onClose: () =>
           2,
         ),
       );
-    };
-    ready.map.on('click', pick);
-    return () => {
-      ready.map.off('click', pick);
-    };
+    });
+    return () => listener.remove();
   }, [ready, drawing, draft, busy]);
   async function impact() {
     setBusy(true);

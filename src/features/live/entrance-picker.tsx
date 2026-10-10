@@ -1,13 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { GeoJsonObject } from 'geojson';
-import type * as Leaflet from 'leaflet';
-import { addTiles } from './tiles';
+import {
+  googleMapsAuthenticationFailed,
+  googleMapId,
+  loadGoogleMaps,
+  onGoogleMapsAuthenticationFailure,
+  toLatLngLiteral,
+} from '@/lib/google-maps';
 
 type Point = { latitude: number; longitude: number };
+type ReadyMap = {
+  map: google.maps.Map;
+  AdvancedMarkerElement: typeof google.maps.marker.AdvancedMarkerElement;
+};
 
-export function EntrancePicker({ latitude, longitude, geometry, onPick }: {
+export function EntrancePicker({
+  latitude,
+  longitude,
+  geometry,
+  onPick,
+}: {
   latitude: unknown;
   longitude: unknown;
   geometry?: unknown;
@@ -15,79 +28,115 @@ export function EntrancePicker({ latitude, longitude, geometry, onPick }: {
 }) {
   const container = useRef<HTMLDivElement>(null);
   const callback = useRef(onPick);
-  const marker = useRef<Leaflet.Marker | null>(null);
-  const [ready, setReady] = useState<{ L: typeof Leaflet; map: Leaflet.Map }>();
+  const marker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const dragListener = useRef<google.maps.MapsEventListener | null>(null);
+  const [ready, setReady] = useState<ReadyMap>();
   const [error, setError] = useState('');
-  useEffect(() => { callback.current = onPick; }, [onPick]);
+  useEffect(() => {
+    callback.current = onPick;
+  }, [onPick]);
 
   useEffect(() => {
-    let cancelled = false;
-    let map: Leaflet.Map | undefined;
-    let observer: ResizeObserver | undefined;
-    void import('leaflet').then((L) => {
-      if (cancelled || !container.current) return;
-      map = L.map(container.current, { scrollWheelZoom: false }).setView([23.7, 90.35], 7);
-      addTiles(L, map, () => {
-        if (!cancelled) setError('Map tiles could not load. Check your connection or enter coordinates below.');
-      });
-      map.on('click', (event: Leaflet.LeafletMouseEvent) => {
-        const p = event.latlng.wrap();
-        callback.current({ latitude: p.lat, longitude: p.lng });
-      });
-      observer = new ResizeObserver(() => map?.invalidateSize());
-      observer.observe(container.current);
-      setReady({ L, map });
-    }).catch(() => {
-      if (!cancelled) setError('Map could not load. Reload the page or enter coordinates below.');
+    let active = true;
+    let click: google.maps.MapsEventListener | undefined;
+    const stopListeningForAuthenticationFailure = onGoogleMapsAuthenticationFailure((cause) => {
+      if (!active) return;
+      setReady(undefined);
+      setError(cause.message + ' Enter coordinates below.');
     });
+    void loadGoogleMaps('en')
+      .then(async () => {
+        const [{ Map }, { AdvancedMarkerElement }] = await Promise.all([
+          google.maps.importLibrary('maps') as Promise<google.maps.MapsLibrary>,
+          google.maps.importLibrary('marker') as Promise<google.maps.MarkerLibrary>,
+        ]);
+        if (!active || googleMapsAuthenticationFailed() || !container.current) return;
+        const map = new Map(container.current, {
+          center: { lat: 23.7, lng: 90.35 },
+          zoom: 7,
+          mapId: googleMapId(),
+          clickableIcons: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          gestureHandling: 'cooperative',
+        });
+        click = map.addListener('click', (event: google.maps.MapMouseEvent) => {
+          if (event.latLng)
+            callback.current({ latitude: event.latLng.lat(), longitude: event.latLng.lng() });
+        });
+        setReady({ map, AdvancedMarkerElement });
+      })
+      .catch((cause: Error) => {
+        if (active) setError(cause.message + ' Enter coordinates below.');
+      });
     return () => {
-      cancelled = true;
-      observer?.disconnect();
-      map?.remove();
+      active = false;
+      click?.remove();
+      stopListeningForAuthenticationFailure();
+      dragListener.current?.remove();
+      if (marker.current) marker.current.map = null;
       marker.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!ready || !geometry) return;
-    const layer = ready.L.geoJSON(geometry as GeoJsonObject, {
-      style: { color: '#14796c', weight: 2, fillOpacity: 0.06 },
-      interactive: false,
-    }).addTo(ready.map);
-    const bounds = layer.getBounds();
-    if (bounds.isValid()) ready.map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
-    return () => { layer.remove(); };
+    const features = ready.map.data.addGeoJson({
+      type: 'Feature',
+      properties: {},
+      geometry,
+    });
+    ready.map.data.setStyle({ strokeColor: '#14796c', strokeWeight: 2, fillOpacity: 0.06 });
+    const bounds = new google.maps.LatLngBounds();
+    features.forEach((feature) =>
+      feature.getGeometry()?.forEachLatLng((point) => bounds.extend(point)),
+    );
+    if (!bounds.isEmpty()) ready.map.fitBounds(bounds, 24);
+    return () => features.forEach((feature) => ready.map.data.remove(feature));
   }, [ready, geometry]);
 
   useEffect(() => {
     if (!ready) return;
-    const lat = Number(latitude), lng = Number(longitude);
-    if (latitude === '' || longitude === '' || latitude == null || longitude == null ||
-        !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-      marker.current?.remove();
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (
+      latitude === '' ||
+      longitude === '' ||
+      latitude == null ||
+      longitude == null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lng) > 180
+    ) {
+      if (marker.current) marker.current.map = null;
       marker.current = null;
       return;
     }
+    const position = { lat, lng };
     if (!marker.current) {
-      marker.current = ready.L.marker([lat, lng], {
-        draggable: true,
+      const pin = document.createElement('div');
+      pin.className = 'entrance-pin';
+      pin.innerHTML = '<span></span>';
+      marker.current = new ready.AdvancedMarkerElement({
+        map: ready.map,
+        position,
         title: 'Pharmacy entrance — drag to adjust',
-        alt: 'Selected pharmacy entrance',
-        icon: ready.L.divIcon({
-          className: 'entrance-pin',
-          html: '<span></span>',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-        }),
-      }).addTo(ready.map);
-      marker.current.on('dragend', () => {
-        const p = marker.current!.getLatLng().wrap();
-        callback.current({ latitude: p.lat, longitude: p.lng });
+        content: pin,
+        gmpDraggable: true,
       });
-      ready.map.setView([lat, lng], Math.max(ready.map.getZoom(), 17));
+      dragListener.current = marker.current.addListener('dragend', () => {
+        const point = marker.current?.position;
+        if (!point) return;
+        const value = toLatLngLiteral(point);
+        callback.current({ latitude: value.lat, longitude: value.lng });
+      });
+      ready.map.setCenter(position);
+      ready.map.setZoom(Math.max(ready.map.getZoom() ?? 7, 17));
     } else {
-      marker.current.setLatLng([lat, lng]);
-      if (!ready.map.getBounds().contains([lat, lng])) ready.map.panTo([lat, lng]);
+      marker.current.position = position;
+      if (!ready.map.getBounds()?.contains(position)) ready.map.panTo(position);
     }
   }, [ready, latitude, longitude]);
 
@@ -95,15 +144,23 @@ export function EntrancePicker({ latitude, longitude, geometry, onPick }: {
     <section className="entrance-picker" aria-label="Pharmacy entrance picker">
       <strong>Pick the pharmacy entrance</strong>
       <p>Zoom in and click or tap the exact shop entrance. Drag the pin to adjust it.</p>
-      <div ref={container} className="entrance-map" aria-label="Entrance map: use arrow keys to pan and plus or minus to zoom" />
-      <button type="button" className="button secondary" disabled={!ready} onClick={() => {
-        if (!ready) return;
-        const p = ready.map.getCenter().wrap();
-        callback.current({ latitude: p.lat, longitude: p.lng });
-      }}>Use map centre as entrance</button>
-      <p aria-live="polite">{latitude !== '' && longitude !== '' && latitude != null && longitude != null
-        ? 'Entrance selected. Coordinates below update automatically.'
-        : 'No entrance selected yet.'}</p>
+      <div ref={container} className="entrance-map" aria-label="Google entrance map" />
+      <button
+        type="button"
+        className="button secondary"
+        disabled={!ready}
+        onClick={() => {
+          const point = ready?.map.getCenter();
+          if (point) callback.current({ latitude: point.lat(), longitude: point.lng() });
+        }}
+      >
+        Use map centre as entrance
+      </button>
+      <p aria-live="polite">
+        {latitude !== '' && longitude !== '' && latitude != null && longitude != null
+          ? 'Entrance selected. Coordinates below update automatically.'
+          : 'No entrance selected yet.'}
+      </p>
       {error && <p role="alert">{error}</p>}
     </section>
   );

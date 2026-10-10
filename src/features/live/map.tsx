@@ -1,13 +1,34 @@
 'use client';
+
 import { useEffect, useRef, useState } from 'react';
-import type * as Leaflet from 'leaflet';
+import { useLocale } from 'next-intl';
 import { LivePharmacy, Origin, LiveRoute } from '@/lib/api';
-import { addTiles } from './tiles';
+import {
+  decodePolyline,
+  googleMapsAuthenticationFailed,
+  googleMapId,
+  loadGoogleMaps,
+  onGoogleMapsAuthenticationFailure,
+} from '@/lib/google-maps';
+
+type ReadyMap = {
+  map: google.maps.Map;
+  AdvancedMarkerElement: typeof google.maps.marker.AdvancedMarkerElement;
+};
+
+function markerContent(label: string, selected: boolean) {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = `live-map-pin ${selected ? 'selected' : ''}`;
+  node.textContent = label;
+  return node;
+}
 
 export function ShopMap({
   origin,
   points,
   selected,
+  route,
   onSelect,
   onPick,
 }: {
@@ -18,114 +39,152 @@ export function ShopMap({
   onSelect: (id: string) => void;
   onPick?: (p: Pick<Origin, 'latitude' | 'longitude'>) => void;
 }) {
+  const locale = useLocale();
   const element = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState<{ L: typeof Leaflet; map: Leaflet.Map }>();
+  const [ready, setReady] = useState<ReadyMap>();
   const [error, setError] = useState('');
   const [zoom, setZoom] = useState(14);
+
   useEffect(() => {
     let active = true;
-    let map: Leaflet.Map | undefined;
-    let observer: ResizeObserver | undefined;
-    void import('leaflet')
-      .then((L) => {
-        if (!active || !element.current) return;
-        map = L.map(element.current, { scrollWheelZoom: false }).setView([23.78, 90.4], 14);
-        addTiles(L, map, () => {
-          if (active)
-            setError(
-              'Map tiles could not load. Use the shop list below. / নিচের দোকানের তালিকা ব্যবহার করুন।',
-            );
+    let listener: google.maps.MapsEventListener | undefined;
+    const stopListeningForAuthenticationFailure = onGoogleMapsAuthenticationFailure((cause) => {
+      if (!active) return;
+      setReady(undefined);
+      setError(cause.message);
+    });
+    void loadGoogleMaps(locale)
+      .then(async () => {
+        const [{ Map }, { AdvancedMarkerElement }] = await Promise.all([
+          google.maps.importLibrary('maps') as Promise<google.maps.MapsLibrary>,
+          google.maps.importLibrary('marker') as Promise<google.maps.MarkerLibrary>,
+        ]);
+        if (!active || googleMapsAuthenticationFailed() || !element.current) return;
+        const map = new Map(element.current, {
+          center: { lat: 23.78, lng: 90.4 },
+          zoom: 14,
+          mapId: googleMapId(),
+          clickableIcons: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          gestureHandling: 'cooperative',
         });
-        map.on('zoomend', () => setZoom(map!.getZoom()));
-        observer = new ResizeObserver(() => map?.invalidateSize());
-        observer.observe(element.current);
-        setReady({ L, map });
+        listener = map.addListener('zoom_changed', () => setZoom(map.getZoom() ?? 14));
+        setReady({ map, AdvancedMarkerElement });
       })
-      .catch(() => {
-        if (active) setError('Map could not load. Use the shop list below.');
+      .catch((cause: Error) => {
+        if (active) setError(cause.message);
       });
     return () => {
       active = false;
-      observer?.disconnect();
-      map?.remove();
+      listener?.remove();
+      stopListeningForAuthenticationFailure();
     };
-  }, []);
+  }, [locale]);
+
   useEffect(() => {
     if (!ready || !onPick) return;
-    const pick = (e: Leaflet.LeafletMouseEvent) => {
-      const p = e.latlng.wrap();
-      onPick({ latitude: p.lat, longitude: p.lng });
-    };
-    ready.map.on('click', pick);
-    return () => {
-      ready.map.off('click', pick);
-    };
+    const listener = ready.map.addListener('click', (event: google.maps.MapMouseEvent) => {
+      if (event.latLng) onPick({ latitude: event.latLng.lat(), longitude: event.latLng.lng() });
+    });
+    return () => listener.remove();
   }, [ready, onPick]);
+
   useEffect(() => {
     if (!ready) return;
-    const positions: Leaflet.LatLngTuple[] = points.map((p) => [p.latitude, p.longitude]);
-    if (origin) positions.push([origin.latitude, origin.longitude]);
-    if (positions.length) ready.map.fitBounds(positions, { padding: [40, 40], maxZoom: 16 });
+    const bounds = new google.maps.LatLngBounds();
+    for (const point of points) bounds.extend({ lat: point.latitude, lng: point.longitude });
+    if (origin) bounds.extend({ lat: origin.latitude, lng: origin.longitude });
+    if (!bounds.isEmpty()) {
+      ready.map.fitBounds(bounds, 40);
+      google.maps.event.addListenerOnce(ready.map, 'idle', () => {
+        if ((ready.map.getZoom() ?? 0) > 16) ready.map.setZoom(16);
+      });
+    }
   }, [ready, origin, points]);
+
   useEffect(() => {
     if (!ready) return;
-    const { L, map } = ready;
-    const layers = L.layerGroup().addTo(map);
-    const make = (
-      lat: number,
-      lng: number,
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+    const removeListeners: Array<() => void> = [];
+    const add = (
+      position: google.maps.LatLngLiteral,
       label: string,
       title: string,
       active: boolean,
       click?: () => void,
     ) => {
-      const node = document.createElement('span');
-      node.className = `live-map-pin ${active ? 'selected' : ''}`;
-      node.textContent = label;
-      const marker = L.marker([lat, lng], {
+      const content = markerContent(label, active);
+      content.setAttribute('aria-label', title);
+      const marker = new ready.AdvancedMarkerElement({
+        map: ready.map,
+        position,
         title,
-        alt: title,
-        bubblingMouseEvents: false,
-        icon: L.divIcon({
-          html: node,
-          className: 'shop-map-marker',
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-        }),
-      }).addTo(layers);
-      marker.on('add', () => marker.getElement()?.setAttribute('aria-label', title));
-      marker.getElement()?.setAttribute('aria-label', title);
-      if (click) marker.on('click', click);
+        content,
+        zIndex: active ? 20 : 10,
+        gmpClickable: Boolean(click),
+      });
+      if (click) {
+        const listener = () => click();
+        marker.addEventListener('gmp-click', listener);
+        removeListeners.push(() => marker.removeEventListener('gmp-click', listener));
+      }
+      markers.push(marker);
     };
-    if (origin) make(origin.latitude, origin.longitude, '●', 'Your starting point', false);
+    if (origin)
+      add(
+        { lat: origin.latitude, lng: origin.longitude },
+        '●',
+        locale === 'bn' ? 'আপনার শুরুর স্থান' : 'Your starting point',
+        false,
+      );
     const groups = new Map<string, LivePharmacy[]>();
     const cell = 180 / Math.pow(2, zoom + 2);
-    for (const p of points) {
+    for (const point of points) {
       const key =
-        p.id === selected
-          ? p.id
-          : `${Math.floor(p.latitude / cell)},${Math.floor(p.longitude / cell)}`;
-      groups.set(key, [...(groups.get(key) || []), p]);
+        point.id === selected
+          ? point.id
+          : `${Math.floor(point.latitude / cell)},${Math.floor(point.longitude / cell)}`;
+      groups.set(key, [...(groups.get(key) || []), point]);
     }
     for (const group of groups.values()) {
-      const p = group[0];
-      make(
-        p.latitude,
-        p.longitude,
+      const point = group[0]!;
+      add(
+        { lat: point.latitude, lng: point.longitude },
         group.length > 1 ? String(group.length) : '+',
-        group.length > 1 ? `${group.length} pharmacies; zoom in` : p.name_en,
-        p.id === selected,
+        group.length > 1 ? `${group.length} pharmacies; zoom in` : point.name_en,
+        point.id === selected,
         () => {
-          if (group.length > 1) map.setView([p.latitude, p.longitude], Math.min(19, zoom + 2));
-          else onSelect(p.id);
+          if (group.length > 1) {
+            ready.map.panTo({ lat: point.latitude, lng: point.longitude });
+            ready.map.setZoom(Math.min(19, zoom + 2));
+          } else onSelect(point.id);
         },
       );
     }
-    // Google route geometry must not be drawn on an OpenStreetMap basemap.
     return () => {
-      layers.remove();
+      removeListeners.forEach((remove) => remove());
+      markers.forEach((marker) => (marker.map = null));
     };
-  }, [ready, points, selected, origin, onSelect, zoom]);
+  }, [ready, points, selected, origin, onSelect, zoom, locale]);
+
+  useEffect(() => {
+    if (!ready || !route?.polyline) return;
+    const path = decodePolyline(route.polyline);
+    const line = new google.maps.Polyline({
+      map: ready.map,
+      path,
+      strokeColor: '#14796c',
+      strokeOpacity: 0.95,
+      strokeWeight: 6,
+    });
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach((point) => bounds.extend(point));
+    if (!bounds.isEmpty()) ready.map.fitBounds(bounds, 48);
+    return () => line.setMap(null);
+  }, [ready, route]);
+
   return (
     <div className="live-map">
       <div ref={element} className="live-map-canvas" aria-label="Pharmacy map" />

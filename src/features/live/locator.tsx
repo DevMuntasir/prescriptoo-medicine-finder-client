@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { ShopMap } from './map';
 import { Modal } from '@/components/ui/primitives';
+import { cachedLocatorSearch } from './locator-cache';
 interface SearchResult {
   items: LivePharmacy[];
   radiusKm: number | null;
@@ -73,10 +74,13 @@ export function LiveLocator({
     setBusy('search');
     setResult(undefined);
     try {
-      const next = await api<SearchResult>('public/locator/search', {
-        method: 'POST',
-        body: json({ medicineId: medicine.id, ...body }),
-      });
+      const payload = { medicineId: medicine.id, ...body };
+      const next = await cachedLocatorSearch<SearchResult>(JSON.stringify(payload), () =>
+        api<SearchResult>('public/locator/search', {
+          method: 'POST',
+          body: json(payload),
+        }),
+      );
       if (id !== searchId.current) return;
       setResult(next);
       setSelected(
@@ -265,6 +269,9 @@ export function LiveLocator({
     invalidate();
     setMode(next);
   };
+  const googleNavigationUrl = shop
+    ? `https://www.google.com/maps/dir/?api=1&destination=${shop.latitude},${shop.longitude}&travelmode=${mode === 'WALK' ? 'walking' : 'driving'}&dir_action=navigate`
+    : '';
   return (
     <main className={`live-finder ${qrEntry ? 'from-qr' : ''}`}>
       <div className="live-finder-title">
@@ -355,9 +362,9 @@ export function LiveLocator({
               className="text-link"
               target="_blank"
               rel="noopener noreferrer"
-              href={`https://www.openstreetmap.org/?mlat=${shop.latitude}&mlon=${shop.longitude}#map=18/${shop.latitude}/${shop.longitude}`}
+              href={googleNavigationUrl}
             >
-              {tx('View pharmacy on OpenStreetMap', 'OpenStreetMap-এ দোকান দেখুন')}
+              {tx('Open navigation in Google Maps', 'Google Maps-এ নেভিগেশন খুলুন')}
             </a>
           )}
           <button
@@ -434,6 +441,14 @@ export function LiveLocator({
                   'দোকানে ওষুধের মজুত নিশ্চিত করুন।',
                 )}
               </p>
+              <a
+                className="text-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                href={googleNavigationUrl}
+              >
+                {tx('Navigate with Google Maps', 'Google Maps দিয়ে নেভিগেট করুন')}
+              </a>
             </section>
           ) : (
             <section className="live-shop-sheet">

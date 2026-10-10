@@ -37,7 +37,7 @@ test('medicine setup retains entries, stages pharmacies and saves one reviewed p
       },
     });
   });
-  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
+  await page.route('https://maps.googleapis.com/maps/api/js**', (route) => route.abort());
   await page.goto('/admin/medicines');
   await page.getByRole('button', { name: 'Add medicine', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -110,7 +110,7 @@ test('shared-boundary pharmacy requires locality selection and ignores stale che
       json: { data: path.endsWith('/me') ? { permissions: ['*'] } : { items: [], total: 0 } },
     });
   });
-  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
+  await page.route('https://maps.googleapis.com/maps/api/js**', (route) => route.abort());
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/admin/pharmacies');
   await page.getByRole('button', { name: 'Add pharmacy', exact: true }).click();
