@@ -33,7 +33,8 @@ export function loadGoogleMaps(language = 'bn') {
   if (typeof window === 'undefined') return Promise.reject(new Error('Google Maps needs a browser.'));
   installAuthenticationFailureHandler();
   if (authenticationFailed) return Promise.reject(authenticationError());
-  if (window.google?.maps?.importLibrary) return Promise.resolve(window.google);
+  const maps = window.google?.maps as { importLibrary?: unknown } | undefined;
+  if (typeof maps?.importLibrary === 'function') return Promise.resolve(window.google);
   if (loadPromise) return loadPromise;
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
   if (!key) return Promise.reject(new Error('Google Maps is not configured. Use the shop list below.'));
@@ -76,9 +77,9 @@ export function googleMapId() {
 export function toLatLngLiteral(
   value: google.maps.LatLng | google.maps.LatLngLiteral,
 ): google.maps.LatLngLiteral {
-  return typeof value.lat === 'function'
-    ? { lat: value.lat(), lng: value.lng() }
-    : { lat: value.lat, lng: value.lng };
+  const latitude = typeof value.lat === 'function' ? value.lat() : value.lat;
+  const longitude = typeof value.lng === 'function' ? value.lng() : value.lng;
+  return { lat: latitude, lng: longitude };
 }
 
 // Routes API uses Google's encoded polyline format. Decoding locally avoids another library/request.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodePolyline } from '../src/lib/google-maps';
+import { decodePolyline, toLatLngLiteral } from '../src/lib/google-maps';
 import { cachedLocatorSearch } from '../src/features/live/locator-cache';
 import {
   ARRIVAL_RADIUS_METERS,
@@ -8,6 +8,16 @@ import {
 } from '../src/features/live/live-tracking';
 
 describe('Google map utilities', () => {
+  it('normalizes both Google LatLng objects and literal coordinates', () => {
+    expect(toLatLngLiteral({ lat: 23.78, lng: 90.38 })).toEqual({ lat: 23.78, lng: 90.38 });
+    expect(
+      toLatLngLiteral({
+        lat: () => 23.81,
+        lng: () => 90.41,
+      } as google.maps.LatLng),
+    ).toEqual({ lat: 23.81, lng: 90.41 });
+  });
+
   it('decodes a Routes API overview polyline without another library', () => {
     expect(decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@')).toEqual([
       { lat: 38.5, lng: -120.2 },
