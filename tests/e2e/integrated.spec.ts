@@ -105,14 +105,16 @@ test('late route response cannot replace changed mode; second request stays usab
   context,
 }) => {
   await context.grantPermissions(['geolocation']);
-  await context.setGeolocation({ latitude: 23.78, longitude: 90.38, accuracy: 5 });
+  await context.setGeolocation({ latitude: 23.77, longitude: 90.38, accuracy: 5 });
   await page.goto('/q/' + token);
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.getByRole('button', { name: 'Use my location' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Entrance ' + suffix })).toBeVisible();
   let count = 0;
+  const routeOrigins: Array<{ latitude: number; longitude: number }> = [];
   await page.route('**/api/v1/public/locator/route', async (r) => {
     count++;
+    routeOrigins.push(r.request().postDataJSON().origin);
     const first = count === 1;
     if (first) await new Promise((resolve) => setTimeout(resolve, 600));
     await r.fulfill({
@@ -139,6 +141,10 @@ test('late route response cannot replace changed mode; second request stays usab
   await page.getByRole('button', { name: 'Directions', exact: true }).click();
   await expect(page.getByText('Current driving response')).toBeVisible();
   await expect(page.getByText('Old walking response')).toHaveCount(0);
+  await expect(page.getByText('Following your live location')).toBeVisible();
+  await context.setGeolocation({ latitude: 23.771, longitude: 90.38, accuracy: 5 });
+  await expect.poll(() => count).toBe(3);
+  expect(routeOrigins.at(-1)).toMatchObject({ latitude: 23.771, longitude: 90.38 });
 });
 test('admin login and medicine edit persist after refresh', async ({ page }) => {
   await page.goto('/admin/login');

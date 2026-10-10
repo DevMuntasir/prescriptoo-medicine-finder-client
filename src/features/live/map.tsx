@@ -16,11 +16,23 @@ type ReadyMap = {
   AdvancedMarkerElement: typeof google.maps.marker.AdvancedMarkerElement;
 };
 
-function markerContent(label: string, selected: boolean) {
-  const node = document.createElement('button');
-  node.type = 'button';
-  node.className = `live-map-pin ${selected ? 'selected' : ''}`;
-  node.textContent = label;
+function markerContent(label: string, selected: boolean, userLocation = false, moving = false) {
+  const node = document.createElement('div');
+  node.className = [
+    'live-map-pin',
+    selected ? 'selected' : '',
+    userLocation ? 'user-location' : '',
+    moving ? 'moving' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  if (userLocation) {
+    node.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="4.5" r="2.25" fill="currentColor" stroke="none" />
+        <path d="m10.5 8.5 3.2 2.2 2.3 3.4M10.5 8.5 8.2 14m5.5-3.3-3.1 6.1L7 21m3.6-4.2 5 4.2M8.2 14l-3.4-1.3" />
+      </svg>`;
+  } else node.textContent = label;
   return node;
 }
 
@@ -29,6 +41,8 @@ export function ShopMap({
   points,
   selected,
   route,
+  followOrigin = false,
+  originMoving = false,
   onSelect,
   onPick,
 }: {
@@ -36,6 +50,8 @@ export function ShopMap({
   points: LivePharmacy[];
   selected?: string;
   route?: LiveRoute;
+  followOrigin?: boolean;
+  originMoving?: boolean;
   onSelect: (id: string) => void;
   onPick?: (p: Pick<Origin, 'latitude' | 'longitude'>) => void;
 }) {
@@ -93,6 +109,11 @@ export function ShopMap({
 
   useEffect(() => {
     if (!ready) return;
+    if (followOrigin && origin) {
+      ready.map.panTo({ lat: origin.latitude, lng: origin.longitude });
+      if ((ready.map.getZoom() ?? 0) < 16) ready.map.setZoom(16);
+      return;
+    }
     const bounds = new google.maps.LatLngBounds();
     for (const point of points) bounds.extend({ lat: point.latitude, lng: point.longitude });
     if (origin) bounds.extend({ lat: origin.latitude, lng: origin.longitude });
@@ -102,7 +123,7 @@ export function ShopMap({
         if ((ready.map.getZoom() ?? 0) > 16) ready.map.setZoom(16);
       });
     }
-  }, [ready, origin, points]);
+  }, [ready, origin, points, followOrigin]);
 
   useEffect(() => {
     if (!ready) return;
@@ -114,15 +135,16 @@ export function ShopMap({
       title: string,
       active: boolean,
       click?: () => void,
+      userLocation = false,
     ) => {
-      const content = markerContent(label, active);
+      const content = markerContent(label, active, userLocation, userLocation && originMoving);
       content.setAttribute('aria-label', title);
       const marker = new ready.AdvancedMarkerElement({
         map: ready.map,
         position,
         title,
         content,
-        zIndex: active ? 20 : 10,
+        zIndex: userLocation ? 30 : active ? 20 : 10,
         gmpClickable: Boolean(click),
       });
       if (click) {
@@ -138,6 +160,8 @@ export function ShopMap({
         '●',
         locale === 'bn' ? 'আপনার শুরুর স্থান' : 'Your starting point',
         false,
+        undefined,
+        true,
       );
     const groups = new Map<string, LivePharmacy[]>();
     const cell = 180 / Math.pow(2, zoom + 2);
@@ -167,7 +191,7 @@ export function ShopMap({
       removeListeners.forEach((remove) => remove());
       markers.forEach((marker) => (marker.map = null));
     };
-  }, [ready, points, selected, origin, onSelect, zoom, locale]);
+  }, [ready, points, selected, origin, onSelect, zoom, locale, originMoving]);
 
   useEffect(() => {
     if (!ready || !route?.polyline) return;
@@ -181,9 +205,9 @@ export function ShopMap({
     });
     const bounds = new google.maps.LatLngBounds();
     path.forEach((point) => bounds.extend(point));
-    if (!bounds.isEmpty()) ready.map.fitBounds(bounds, 48);
+    if (!followOrigin && !bounds.isEmpty()) ready.map.fitBounds(bounds, 48);
     return () => line.setMap(null);
-  }, [ready, route]);
+  }, [ready, route, followOrigin]);
 
   return (
     <div className="live-map">

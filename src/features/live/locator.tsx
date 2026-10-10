@@ -16,6 +16,12 @@ import {
 import { ShopMap } from './map';
 import { Modal } from '@/components/ui/primitives';
 import { cachedLocatorSearch } from './locator-cache';
+import {
+  ARRIVAL_RADIUS_METERS,
+  distanceMeters,
+  MAX_TRACKING_ACCURACY_METERS,
+  shouldRefreshRoute,
+} from './live-tracking';
 interface SearchResult {
   items: LivePharmacy[];
   radiusKm: number | null;
@@ -50,11 +56,42 @@ export function LiveLocator({
   const [pin, setPin] = useState({ latitude: '', longitude: '' });
   const [all, setAll] = useState(false);
   const [lowAccuracy, setLowAccuracy] = useState<Origin>();
+  const [tracking, setTracking] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState<
+    'idle' | 'active' | 'stopped' | 'arrived' | 'error'
+  >('idle');
+  const [trackingAccuracy, setTrackingAccuracy] = useState<number>();
+  const [trackingMessage, setTrackingMessage] = useState('');
   const searchId = useRef(0),
     routeId = useRef(0),
     steps = useRef<HTMLDivElement>(null);
+  const watchId = useRef<number | undefined>(undefined);
+  const routedFrom = useRef<Origin | undefined>(undefined);
+  const lastRouteRefreshAt = useRef(0);
+  const backgroundRouteRequestId = useRef<number | undefined>(undefined);
   const pharmacies = result?.items || [];
   const shop = pharmacies.find((p) => p.id === selected);
+  const clearLocationWatch = useCallback(() => {
+    if (watchId.current === undefined || !navigator.geolocation) return;
+    navigator.geolocation.clearWatch(watchId.current);
+    watchId.current = undefined;
+  }, []);
+  const stopTracking = useCallback(
+    (status: 'idle' | 'stopped' | 'arrived' | 'error' = 'stopped', message = '') => {
+      clearLocationWatch();
+      setTracking(false);
+      setTrackingStatus(status);
+      setTrackingMessage(message);
+      setTrackingAccuracy(undefined);
+      if (backgroundRouteRequestId.current !== undefined) routeId.current++;
+      backgroundRouteRequestId.current = undefined;
+      if (status === 'idle') {
+        routedFrom.current = undefined;
+        lastRouteRefreshAt.current = 0;
+      }
+    },
+    [clearLocationWatch],
+  );
   const invalidate = useCallback(() => {
     routeId.current++;
     setRoute(undefined);
@@ -66,8 +103,9 @@ export function LiveLocator({
     return () => {
       requests.search.current++;
       requests.route.current++;
+      clearLocationWatch();
     };
-  }, []);
+  }, [clearLocationWatch]);
   async function search(body: { origin?: Origin; areaId?: string }, keepSelected?: string) {
     const id = ++searchId.current;
     invalidate();
@@ -94,6 +132,7 @@ export function LiveLocator({
     }
   }
   async function applyOrigin(next: Origin) {
+    stopTracking('idle');
     setOrigin(next);
     setApprox(undefined);
     setAreaId('');
@@ -101,6 +140,7 @@ export function LiveLocator({
     await search({ origin: next });
   }
   function gps() {
+    stopTracking('idle');
     invalidate();
     setLowAccuracy(undefined);
     const gpsId = ++searchId.current;
@@ -146,6 +186,7 @@ export function LiveLocator({
     );
   }
   async function manual() {
+    stopTracking('idle');
     searchId.current++;
     setBusy('');
     setShowManual(true);
@@ -157,6 +198,7 @@ export function LiveLocator({
       }
   }
   async function chooseArea(id: string) {
+    stopTracking('idle');
     invalidate();
     setAreaId(id);
     setOrigin(undefined);
@@ -170,6 +212,7 @@ export function LiveLocator({
   }
   const select = useCallback(
     (id: string) => {
+      stopTracking('idle');
       invalidate();
       setSelected(id);
       void api('public/events', {
@@ -186,7 +229,78 @@ export function LiveLocator({
         }),
       }).catch(() => {});
     },
-    [invalidate, medicine.id],
+    [invalidate, medicine.id, stopTracking],
+  );
+  const requestRoute = useCallback(
+    async (
+      exact: Origin,
+      destination: LivePharmacy,
+      requestedMode: 'WALK' | 'DRIVE',
+      options: { background?: boolean; recordEvent?: boolean } = {},
+    ) => {
+      const background = options.background ?? false;
+      if (background && backgroundRouteRequestId.current !== undefined) return;
+      const id = ++routeId.current;
+      if (background) backgroundRouteRequestId.current = id;
+      else {
+        setBusy('route');
+        setError('');
+        setRoute(undefined);
+      }
+      if (options.recordEvent !== false)
+        void api('public/events', {
+          method: 'POST',
+          body: json({
+            events: [
+              {
+                id: crypto.randomUUID(),
+                type: 'route_request',
+                medicineId: medicine.id,
+                pharmacyId: destination.id,
+                origin: {
+                  latitude: exact.latitude,
+                  longitude: exact.longitude,
+                  source: exact.source,
+                  accuracy: exact.accuracy,
+                },
+              },
+            ],
+          }),
+        }).catch(() => {});
+      try {
+        const next = await api<LiveRoute>('public/locator/route', {
+          method: 'POST',
+          body: json({
+            medicineId: medicine.id,
+            pharmacyId: destination.id,
+            origin: exact,
+            mode: requestedMode,
+            locale,
+            qrId,
+          }),
+        });
+        if (id !== routeId.current) return;
+        setRoute(next);
+        routedFrom.current = exact;
+        lastRouteRefreshAt.current = Date.now();
+        if (background) setTrackingMessage('');
+        return next;
+      } catch (e) {
+        if (id !== routeId.current) return;
+        if (background)
+          setTrackingMessage(
+            bn
+              ? 'নতুন পথ পাওয়া যায়নি—আগের পথটি দেখানো হচ্ছে।'
+              : 'Could not refresh the route; keeping the previous route.',
+          );
+        else setError((e as Error).message);
+      } finally {
+        if (background && backgroundRouteRequestId.current === id)
+          backgroundRouteRequestId.current = undefined;
+        else if (id === routeId.current) setBusy('');
+      }
+    },
+    [bn, locale, medicine.id, qrId],
   );
   async function directions(exact = origin, destination = shop) {
     if (!destination) return;
@@ -194,49 +308,87 @@ export function LiveLocator({
       setPinOpen(true);
       return;
     }
-    const id = ++routeId.current;
-    setBusy('route');
-    setError('');
-    setRoute(undefined);
-    void api('public/events', {
-      method: 'POST',
-      body: json({
-        events: [
-          {
-            id: crypto.randomUUID(),
-            type: 'route_request',
-            medicineId: medicine.id,
-            pharmacyId: destination.id,
-            origin: {
-              latitude: exact.latitude,
-              longitude: exact.longitude,
-              source: exact.source,
-              accuracy: exact.accuracy,
-            },
-          },
-        ],
-      }),
-    }).catch(() => {});
-    try {
-      const next = await api<LiveRoute>('public/locator/route', {
-        method: 'POST',
-        body: json({
-          medicineId: medicine.id,
-          pharmacyId: destination.id,
-          origin: exact,
-          mode,
-          locale,
-          qrId,
-        }),
-      });
-      if (id !== routeId.current) return;
-      setRoute(next);
-    } catch (e) {
-      if (id === routeId.current) setError((e as Error).message);
-    } finally {
-      if (id === routeId.current) setBusy('');
-    }
+    const next = await requestRoute(exact, destination, mode);
+    if (!next || exact.source !== 'gps') return;
+    routedFrom.current = exact;
+    lastRouteRefreshAt.current = Date.now();
+    setTrackingStatus('active');
+    setTrackingMessage('');
+    setTracking(true);
   }
+  useEffect(() => {
+    if (!tracking || !shop) return;
+    if (!navigator.geolocation) {
+      stopTracking(
+        'error',
+        bn ? 'এই ডিভাইসে লাইভ GPS পাওয়া যাচ্ছে না।' : 'Live GPS is unavailable on this device.',
+      );
+      return;
+    }
+    clearLocationWatch();
+    watchId.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const accuracy = position.coords.accuracy;
+        if (accuracy > MAX_TRACKING_ACCURACY_METERS) {
+          setTrackingMessage(
+            bn
+              ? `GPS নির্ভুলতা এখন প্রায় ${Math.round(accuracy)} মিটার—ভালো সিগন্যালের অপেক্ষা চলছে।`
+              : `GPS accuracy is about ${Math.round(accuracy)} m; waiting for a better signal.`,
+          );
+          return;
+        }
+        const next: Origin = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy,
+          source: 'gps',
+          confirmed: true,
+        };
+        setOrigin(next);
+        setTrackingAccuracy(accuracy);
+        setTrackingStatus('active');
+        setTrackingMessage('');
+        if (
+          accuracy <= 40 &&
+          distanceMeters(next, { latitude: shop.latitude, longitude: shop.longitude }) <=
+            ARRIVAL_RADIUS_METERS
+        ) {
+          stopTracking(
+            'arrived',
+            bn
+              ? 'আপনি দোকানের প্রবেশপথের কাছে পৌঁছে গেছেন।'
+              : 'You have arrived near the shop entrance.',
+          );
+          return;
+        }
+        const now = Date.now();
+        if (
+          shouldRefreshRoute({
+            current: next,
+            routedFrom: routedFrom.current,
+            lastRefreshAt: lastRouteRefreshAt.current,
+            now,
+          })
+        )
+          void requestRoute(next, shop, mode, { background: true, recordEvent: false });
+      },
+      (cause) => {
+        const denied = cause.code === cause.PERMISSION_DENIED;
+        stopTracking(
+          denied ? 'error' : 'stopped',
+          bn
+            ? denied
+              ? 'লাইভ GPS অনুমতি বন্ধ হয়েছে। আবার চালু করতে location permission দিন।'
+              : 'লাইভ GPS আপডেট সাময়িকভাবে পাওয়া যাচ্ছে না।'
+            : denied
+              ? 'Live GPS permission was removed. Allow location access to resume.'
+              : 'Live GPS updates are temporarily unavailable.',
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 20_000 },
+    );
+    return clearLocationWatch;
+  }, [bn, clearLocationWatch, mode, requestRoute, shop, stopTracking, tracking]);
   const pick = useCallback(
     (p: Pick<Origin, 'latitude' | 'longitude'>) =>
       setPin({ latitude: String(p.latitude), longitude: String(p.longitude) }),
@@ -265,9 +417,19 @@ export function LiveLocator({
     const destination = next?.items.find((p) => p.id === shop?.id) || next?.items[0];
     if (destination) await directions(exact, destination);
   }
+  const resumeTracking = () => {
+    if (!origin || origin.source !== 'gps' || !shop) return;
+    routedFrom.current = origin;
+    lastRouteRefreshAt.current = Date.now();
+    setTrackingStatus('active');
+    setTrackingMessage('');
+    setTracking(true);
+  };
   const changedMode = (next: 'WALK' | 'DRIVE') => {
-    invalidate();
     setMode(next);
+    if (tracking && origin && shop)
+      void requestRoute(origin, shop, next, { background: true, recordEvent: false });
+    else invalidate();
   };
   const googleNavigationUrl = shop
     ? `https://www.google.com/maps/dir/?api=1&destination=${shop.latitude},${shop.longitude}&travelmode=${mode === 'WALK' ? 'walking' : 'driving'}&dir_action=navigate`
@@ -385,12 +547,16 @@ export function LiveLocator({
           <div className="live-origin-summary">
             <MapPin size={17} />
             <span>
-              {origin
-                ? tx('Your confirmed starting point', 'আপনার নিশ্চিত শুরুর স্থান')
-                : tx(
-                    'Approximate area · confirm pin for directions',
-                    'আনুমানিক এলাকা · পথের জন্য পিন নিশ্চিত করুন',
-                  )}
+              {tracking
+                ? tx('Live GPS tracking active', 'লাইভ GPS ট্র্যাকিং চালু আছে')
+                : trackingStatus === 'arrived'
+                  ? tx('Arrived near the shop entrance', 'দোকানের প্রবেশপথের কাছে পৌঁছেছেন')
+                  : origin
+                    ? tx('Your confirmed starting point', 'আপনার নিশ্চিত শুরুর স্থান')
+                    : tx(
+                        'Approximate area · confirm pin for directions',
+                        'আনুমানিক এলাকা · পথের জন্য পিন নিশ্চিত করুন',
+                      )}
             </span>
             <button className="text-link" onClick={() => void manual()}>
               {tx('Change', 'বদলান')}
@@ -401,8 +567,53 @@ export function LiveLocator({
             points={pharmacies}
             selected={selected}
             route={route}
+            followOrigin={tracking || trackingStatus === 'arrived'}
+            originMoving={tracking}
             onSelect={select}
           />
+          {trackingStatus !== 'idle' && (
+            <div className="info-banner live-tracking-banner" role="status">
+              <LocateFixed size={20} />
+              <div>
+                <strong>
+                  {tracking
+                    ? tx('Following your live location', 'আপনার লাইভ অবস্থান অনুসরণ করা হচ্ছে')
+                    : trackingStatus === 'arrived'
+                      ? tx('Destination reached', 'গন্তব্যে পৌঁছেছেন')
+                      : tx('Live tracking stopped', 'লাইভ ট্র্যাকিং বন্ধ হয়েছে')}
+                </strong>
+                <p>
+                  {trackingMessage ||
+                    (tracking
+                      ? tx(
+                          `The marker and green route update as you move${trackingAccuracy ? ` · accuracy ${Math.round(trackingAccuracy)} m` : ''}.`,
+                          `আপনি চলার সাথে পিন ও সবুজ পথ আপডেট হবে${trackingAccuracy ? ` · নির্ভুলতা ${Math.round(trackingAccuracy)} মিটার` : ''}।`,
+                        )
+                      : trackingStatus === 'arrived'
+                        ? tx(
+                            'Tracking stopped near the exact shop entrance.',
+                            'দোকানের সঠিক প্রবেশপথের কাছে ট্র্যাকিং বন্ধ হয়েছে।',
+                          )
+                        : tx(
+                            'The last route remains visible. Resume when you are ready.',
+                            'শেষ পথটি দেখা যাচ্ছে। প্রস্তুত হলে আবার চালু করুন।',
+                          ))}
+                </p>
+              </div>
+              {tracking ? (
+                <button className="text-link" onClick={() => stopTracking('stopped')}>
+                  {tx('Stop', 'বন্ধ করুন')}
+                </button>
+              ) : (
+                trackingStatus !== 'arrived' &&
+                origin?.source === 'gps' && (
+                  <button className="text-link" onClick={resumeTracking}>
+                    {tx('Resume', 'আবার চালু করুন')}
+                  </button>
+                )
+              )}
+            </div>
+          )}
           {shop ? (
             <section className="live-shop-sheet">
               <span className="eyebrow">
@@ -415,7 +626,10 @@ export function LiveLocator({
               <p>{bn && shop.address_bn ? shop.address_bn : shop.address_en}</p>
               <div className="live-shop-meta">
                 <strong>
-                  {(shop.distance_m / 1000).toFixed(1)} {tx('km straight-line', 'কিমি সরলরেখায়')}
+                  {((route?.distanceMeters ?? shop.distance_m) / 1000).toFixed(1)}{' '}
+                  {route
+                    ? tx('km route distance', 'কিমি পথের দূরত্ব')
+                    : tx('km straight-line', 'কিমি সরলরেখায়')}
                 </strong>
                 {shop.phone && (
                   <a href={`tel:${shop.phone.replace(/[^+\d]/g, '')}`}>

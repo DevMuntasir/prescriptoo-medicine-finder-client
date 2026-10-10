@@ -4272,6 +4272,19 @@ td select {
 .live-origin-summary .text-link {
   margin-left: auto;
 }
+.live-tracking-banner {
+  align-items: center;
+  margin: 12px 0;
+}
+.live-tracking-banner > div {
+  flex: 1;
+}
+.live-tracking-banner p {
+  margin: 4px 0 0;
+}
+.live-tracking-banner .text-link {
+  flex: none;
+}
 .live-map {
   height: 260px;
   position: relative;
@@ -4306,6 +4319,9 @@ td select {
 .live-map-pin {
   width: 44px;
   height: 44px;
+  position: relative;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
   border: 3px solid white;
   background: #14796c;
@@ -4318,6 +4334,73 @@ td select {
 .live-map-pin.selected {
   background: #b46d20;
   transform: scale(1.12);
+}
+.live-map-pin.user-location {
+  width: 48px;
+  height: 48px;
+  overflow: visible;
+  border-color: #14796c;
+  background: #fff;
+  color: #14796c;
+  box-shadow: 0 3px 12px #0a514842;
+  cursor: default;
+}
+.live-map-pin.user-location::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 3px solid #2a9d8f;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.live-map-pin.user-location svg {
+  position: relative;
+  z-index: 1;
+  width: 29px;
+  height: 29px;
+  overflow: visible;
+}
+.live-map-pin.user-location svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.live-map-pin.user-location.moving::before {
+  animation: live-location-pulse 1.8s ease-out infinite;
+}
+.live-map-pin.user-location.moving svg {
+  transform-origin: 50% 78%;
+  animation: live-person-walk 0.7s ease-in-out infinite alternate;
+}
+@keyframes live-location-pulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+@keyframes live-person-walk {
+  from {
+    transform: translateY(1px) rotate(-3deg);
+  }
+  to {
+    transform: translateY(-2px) rotate(3deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-map-pin.user-location.moving::before,
+  .live-map-pin.user-location.moving svg {
+    animation: none;
+  }
+  .live-map-pin.user-location.moving::before {
+    opacity: 0.35;
+  }
 }
 .live-shop-sheet {
   background: white;
