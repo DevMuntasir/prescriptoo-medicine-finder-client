@@ -3,27 +3,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Cross, ArrowUpRight, Menu, X } from 'lucide-react';
+import { ArrowUpRight, Menu, X } from 'lucide-react';
 import { useState, ReactNode } from 'react';
 import { Locale } from '@/contracts';
 export function Brand() {
   return (
-    <span className="brand">
-      <span className="brand-mark">
-        <Cross size={20} strokeWidth={2.4} />
-      </span>
-      prescriptoo<span className="brand-dot">.</span>
-    </span>
-  );
-}
-export function PatientShell({ children, locale }: { children: ReactNode; locale: Locale }) {
-  const t = useTranslations();
-  const path = usePathname();
-  const [menu, setMenu] = useState(false);
-  const other = locale === 'en' ? 'bn' : 'en';
-  const focused = path.endsWith('/locator');
-  const landing = path === `/${locale}` || path === `/${locale}/`;
-  const brand = landing ? (
     <span className="acme-brand">
       <Image
         src="/acme-logo.png"
@@ -38,20 +22,23 @@ export function PatientShell({ children, locale }: { children: ReactNode; locale
         LOCATOR
       </span>
     </span>
-  ) : (
-    <Brand />
   );
+}
+export function PatientShell({ children, locale }: { children: ReactNode; locale: Locale }) {
+  const t = useTranslations();
+  const path = usePathname();
+  const [menu, setMenu] = useState(false);
+  const other = locale === 'en' ? 'bn' : 'en';
+  const focused = path.endsWith('/locator');
+  const brand = <Brand />;
   return (
-    <div className={landing ? 'acme-shell' : undefined}>
+    <div className="acme-shell">
       {/* <div className="demo-bar">
         <span className="demo-dot" />
         {locale === 'bn' ? 'ফার্মেসি খুঁজুন · মজুতের তথ্য দোকানে নিশ্চিত করুন' : 'Find listed pharmacies · confirm stock with the shop'}
       </div> */}
       <header className={`patient-header ${focused ? 'focused-header' : ''}`}>
-        <Link
-          href={`/${locale}`}
-          aria-label={landing ? 'ACME medicine locator home' : 'Prescriptoo home'}
-        >
+        <Link href={`/${locale}`} aria-label="ACME medicine locator home">
           {brand}
         </Link>
         {focused ? (
@@ -95,18 +82,12 @@ export function PatientShell({ children, locale }: { children: ReactNode; locale
         <footer className="patient-footer">
           <div>
             {brand}
-            <p>
-              {landing
-                ? locale === 'bn'
-                  ? 'আপনার যত্নের পথে।'
-                  : 'A little closer to care.'
-                : t('footer')}
-            </p>
+            <p>{t('footer')}</p>
           </div>
           <div className="footer-links">
             <Link href={`/${locale}/privacy`}>{t('privacy')}</Link>
             <Link href={`/${locale}/terms`}>{locale === 'bn' ? 'শর্তাবলি' : 'Terms'}</Link>
-            <span>© 2026 · {landing ? 'The ACME Laboratories Ltd.' : 'Prescriptoo'}</span>
+            <span>© 2026 · The ACME Laboratories Ltd.</span>
           </div>
         </footer>
       )}

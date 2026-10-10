@@ -82,8 +82,8 @@ export function BoundaryEditor({ id }: { id: string }) {
               >
                 <polygon
                   points={points.map((p) => p.join(',')).join(' ')}
-                  fill="#137c7033"
-                  stroke="#137c70"
+                  fill="var(--brand-soft)"
+                  stroke="var(--brand-blue)"
                   strokeWidth="3"
                 />
                 {points.map((p, i) => (
@@ -93,7 +93,7 @@ export function BoundaryEditor({ id }: { id: string }) {
                     cy={p[1]}
                     r="7"
                     fill="white"
-                    stroke="#137c70"
+                    stroke="var(--brand-blue)"
                     strokeWidth="3"
                   />
                 ))}

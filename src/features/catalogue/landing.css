@@ -1,12 +1,10 @@
 
-body { background: white; }
+
 
 /* ═══════════════════════════════════════════════════════════
    TOKENS
 ═══════════════════════════════════════════════════════════ */
 .acme-landing {
-  --brand-red: #d8272d;
-  --brand-blue: #034ea2;
   --red: var(--brand-red);
   --ink:    #111827;
   --ink2:   #374151;
@@ -461,17 +459,6 @@ body { background: white; }
 .acme-skeleton span { display: block; margin: 20px 10px; width: 65%; height: 13px; border-radius: 4px; background: #e5e9ee; }
 .acme-skeleton span:last-child { width: 40%; }
 
-/* shell */
-.acme-shell { background: #f6f8fb; }
-.acme-shell .patient-header { padding-top: 26px; padding-bottom: 26px; }
-.acme-brand { display: inline-flex; align-items: center; gap: 17px; }
-.acme-brand img { width: 180px; height: auto; }
-.acme-brand > span { border-left: 1px solid #d7dee5; padding-left: 17px; font-size: 10px; color: #3e78bb; line-height: 1.5; }
-.acme-shell .patient-nav { gap: 27px; }
-.acme-shell .patient-nav .button { border-radius: 30px; }
-.acme-shell .patient-footer { border-top: 1px solid #dde3e9; }
-.acme-shell .patient-footer p { font-size: 11px; }
-
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════ */
@@ -479,7 +466,6 @@ body { background: white; }
   .acme-landing { padding: 0 28px; }
   .acme-hero { gap: 48px; }
   .acme-medicine-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .acme-brand > span { display: none; }
 }
 
 @media (max-width: 720px) {
@@ -597,7 +583,6 @@ body { background: white; }
 @media (prefers-reduced-motion: reduce) { .atlas-hero *, .journey-demo * { animation: none !important; transition: none !important; }.atlas-route { stroke-dasharray: none; }.demo-phone, .demo-stage-1 .demo-phone, .demo-stage-2 .demo-phone { transform: none; } }
 
 /* ACME logo palette: blue #034EA2, red #D8272D. */
-.acme-landing { --brand-blue: #034ea2; --brand-red: #d8272d; }
 .acme-highlight, .final-pin, .demo-phone-brand > span { color: var(--brand-red); }
 .story-primary, .acme-search-btn { background: var(--brand-red); }
 .story-heading h2, .location-bento h2, .location-final h2 { color: #12375f; }
@@ -616,4 +601,3 @@ body { background: white; }
 .demo-topline { justify-content: flex-end; }
 .demo-topline small, .demo-footer, .demo-side-label { color: #d1e3fa; }
 .demo-note small, .demo-hint, .demo-medicine > p, .demo-search { color: #607089; }
-.acme-shell .patient-nav .button { background: #034ea2; color: white; }

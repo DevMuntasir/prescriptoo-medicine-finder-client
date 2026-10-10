@@ -53,7 +53,7 @@ export function SchematicMap({
                   ? `M312 280 L312 ${destination.y * 5} L${destination.x * 6} ${destination.y * 5}`
                   : 'M310 280L310 215L280 215'
               }
-              stroke="#137c70"
+              stroke="var(--brand-blue)"
               strokeWidth="5"
               fill="none"
               strokeDasharray="10 5"

@@ -199,7 +199,7 @@ export function ShopMap({
     const line = new google.maps.Polyline({
       map: ready.map,
       path,
-      strokeColor: '#14796c',
+      strokeColor: getComputedStyle(document.documentElement).getPropertyValue('--brand-blue').trim(),
       strokeOpacity: 0.95,
       strokeWeight: 6,
     });
