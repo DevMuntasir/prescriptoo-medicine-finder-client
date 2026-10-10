@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -8,22 +8,35 @@ import {
   ArrowUpRight,
   Search,
   MapPin,
-  ShieldCheck,
   Pill,
-  Plus,
-  LocateFixed,
+  Navigation,
+  ScanLine,
+  X,
+  ShieldCheck,
+  Star,
+  Clock,
+  CheckCircle2,
+  Package,
   ChevronRight,
+  Footprints,
+  QrCode,
+  Stethoscope,
+  Route,
 } from 'lucide-react';
 import { api, LiveMedicine } from '@/lib/api';
 import { Medicine } from '@/contracts';
 import { Badge, Empty } from '@/components/ui/primitives';
+import './landing.css';
+import { MEDICINES, PHARMACIES } from './mockPharmacies';
+import { MapPharmacy, MedicineItem } from './pharmacy';
+
 export function MedicineArt({ medicine, large = false }: { medicine: Medicine; large?: boolean }) {
   return (
     <div className={`medicine-art ${medicine.color} ${large ? 'large' : ''}`} aria-hidden="true">
       {medicine.imageFileId ? (
         <Image
           src={`/api/v1/public/images/${medicine.imageFileId}`}
-          alt={medicine.name}
+          alt=""
           width={400}
           height={300}
         />
@@ -38,355 +51,319 @@ export function MedicineArt({ medicine, large = false }: { medicine: Medicine; l
     </div>
   );
 }
-export function Catalogue() {
-  const [medicines, setMedicines] = useState<Medicine[]>([]);
-  const [loadError, setLoadError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+
+/* ═══════════════════════════════════════════════════════════
+   HERO JOURNEY PREVIEW  (right column)
+   Shows the 3-step flow: QR scan → medicine → pharmacy + directions
+═══════════════════════════════════════════════════════════ */
+const PREVIEW_STEPS = [
+  {
+    id: 'qr',
+    icon: <QrCode size={20} />,
+    label: 'QR স্ক্যান',
+    labelEn: 'Scan QR',
+    desc: 'ডাক্তারের কার্ড স্ক্যান করুন',
+    descEn: 'Scan your prescription card',
+    color: '#f0f4ff',
+    accent: '#4f46e5',
+  },
+  {
+    id: 'medicine',
+    icon: <Pill size={20} />,
+    label: 'ওষুধ',
+    labelEn: 'Medicine',
+    desc: 'Napa Extra 500mg/65mg',
+    descEn: 'Napa Extra 500mg/65mg',
+    color: '#fff7ed',
+    accent: '#ea580c',
+  },
+  {
+    id: 'route',
+    icon: <Route size={20} />,
+    label: 'পথ দেখুন',
+    labelEn: 'Get directions',
+    desc: 'Al-Madina · ৪.৮ km · ১৪ মিনিট',
+    descEn: 'Al-Madina · 4.8 km · 14 min',
+    color: '#f0fdf4',
+    accent: '#16a34a',
+  },
+];
+
+function JourneyPreview({ bn }: { bn: boolean }) {
+  const [active, setActive] = useState(0);
+
   useEffect(() => {
-    let active = true;
-    api<(LiveMedicine & { total: number })[]>(`public/medicines?limit=100&offset=${offset}`)
-      .then((rows) => {
-        if (!active) return;
-        setMedicines((previous) => [
-          ...(offset ? previous : []),
-          ...rows.map((m) => ({
-            id: m.id,
-            slug: m.slug,
-            name: m.name_en,
-            nameBn: m.name_bn,
-            generic: m.generic_en,
-            genericBn: m.generic_bn,
-            strength: m.strength,
-            form: m.form,
-            category: m.category,
-            status: 'Published' as const,
-            color: 'mint',
-            pharmacies: 0,
-            imageFileId: m.image_file_id,
-          })),
-        ]);
-        setHasMore(offset + rows.length < (rows[0]?.total ?? 0));
-        setLoading(false);
-      })
-      .catch((e) => {
-        if (active) {
-          setLoadError(e.message);
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [offset]);
-  const locale = useLocale();
-  const t = useTranslations();
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All medicines');
-  const categories = [
-    'All medicines',
-    ...new Set(medicines.map((m) => m.category).filter(Boolean)),
-  ];
-  const filtered = medicines.filter(
-    (m) =>
-      m.status === 'Published' &&
-      (category === 'All medicines' || m.category === category) &&
-      `${m.name} ${m.generic} ${m.nameBn ?? ''}`.toLowerCase().includes(search.toLowerCase()),
-  );
+    const t = setInterval(() => setActive((a) => (a + 1) % PREVIEW_STEPS.length), 2400);
+    return () => clearInterval(t);
+  }, []);
+
   return (
-    <main>
-      <section className="hero">
-        <div className="hero-copy">
-          {/* <div className="eyebrow">
-            <span className="small-line" />
-            {locale === 'bn' ? 'যত্নের আরও কাছে' : 'A LITTLE CLOSER TO CARE'}
-          </div> */}
-          <h1>
-            {t('heading')
-              .split('\n')
-              .map((line, i) => (
-                <span key={i} className={i ? 'accent' : ''}>
-                  {line}
-                </span>
-              ))}
-          </h1>
-          <p>{t('intro')}</p>
-          <a className="button" href="#medicines">
-            {t('browse')}
-            <ArrowRight size={18} />
-          </a>
-          {/* <div className="hero-trust">
-            <ShieldCheck size={17} />
-            {locale === 'bn'
-              ? 'অবস্থানের তথ্য ছাড়াই ওষুধ দেখুন'
-              : 'Browse first. Choose your location when you’re ready.'}
-          </div> */}
-        </div>
-        <div className="hero-visual" aria-hidden="true">
-          <div className="hero-orbit orbit-one" />
-          <div className="hero-orbit orbit-two" />
-          <div className="hero-cross">+</div>
-          <div className="hero-map">
-            <svg viewBox="0 0 400 350">
-              <path
-                d="M-10 85L420 180M25-10L160 360M-10 255L420 115M260-10L190 370M340-10L340 370"
-                stroke="#fff"
-                strokeWidth="15"
-              />
-              <path
-                d="M190 230L190 175Q190 140 235 140L290 140"
-                stroke="#177d71"
-                strokeWidth="4"
-                strokeDasharray="7 6"
-                fill="none"
-              />
-            </svg>
-            <div className="hero-pin">
-              <MapPin size={27} fill="currentColor" stroke="white" />
+    <div className="hjp-root" aria-hidden="true">
+      {/* Step flow */}
+      <div className="hjp-steps">
+        {PREVIEW_STEPS.map((step, i) => (
+          <div key={step.id} className={`hjp-step ${active === i ? 'hjp-step--active' : ''}`}>
+            <div className="hjp-step-connector" />
+            <div className="hjp-step-node" style={{ background: step.color, color: step.accent }}>
+              {step.icon}
             </div>
-            <div className="origin-dot" />
-          </div>
-          <div className="floating-card pharmacy-float">
-            <span className="float-icon">
-              <CrossIcon />
-            </span>
-            <div>
-              <strong>{locale === 'bn' ? 'কাছাকাছি ফার্মেসি' : 'A pharmacy close by'}</strong>
-              <small>
-                {locale === 'bn' ? 'নমুনা অবস্থান · ০.৪ কিমি' : 'Sample location · 0.4 km away'}
-              </small>
+            <div className="hjp-step-body">
+              <span className="hjp-step-label">{bn ? step.label : step.labelEn}</span>
+              <span className="hjp-step-desc">{bn ? step.desc : step.descEn}</span>
             </div>
-            <span className="float-check">✓</span>
+            {active === i && <CheckCircle2 size={15} className="hjp-step-check" />}
           </div>
-          <div className="floating-card care-float">
-            <span className="float-pill">
-              <Pill size={20} />
-            </span>
-            <div>
-              <strong>
-                {locale === 'bn' ? 'আপনার পরবর্তী পদক্ষেপ' : 'Your next step, simplified'}
-              </strong>
-              <small>
-                {locale === 'bn'
-                  ? 'ওষুধ → ফার্মেসি → দিকনির্দেশনা'
-                  : 'Medicine → pharmacy → directions'}
-              </small>
-            </div>
+        ))}
+      </div>
+
+      {/* Active content card */}
+      {active === 0 && (
+        <div className="hjp-card hjp-card-qr">
+          <div className="hjp-qr-icon">
+            <QrCode size={52} />
           </div>
-          {/* <span className="visual-label">ILLUSTRATIVE MAP</span> */}
-        </div>
-      </section>
-      {/* <section className="benefits">
-        <div>
-          <span className="benefit-icon">
-            <Pill size={21} />
-          </span>
-          <div>
-            <strong>{locale === 'bn' ? 'সহজে খুঁজুন' : 'Find what you need'}</strong>
-            <p>
-              {locale === 'bn' ? 'ওষুধ বা জেনেরিক নাম দিয়ে' : 'Search by medicine or generic name'}
-            </p>
+          <div className="hjp-qr-lines">
+            <div className="hjp-qr-line hjp-qr-line--scan" />
+          </div>
+          <div className="hjp-card-label">
+            <Stethoscope size={13} />
+            {bn ? 'ডাক্তারের কার্ড' : "Doctor's prescription card"}
           </div>
         </div>
-        <div>
-          <span className="benefit-icon">
-            <MapPin size={21} />
-          </span>
-          <div>
-            <strong>{locale === 'bn' ? 'কাছাকাছি ফার্মেসি' : 'Explore nearby pharmacies'}</strong>
-            <p>{locale === 'bn' ? 'তালিকা ও মানচিত্র একসাথে' : 'A clear list and map, together'}</p>
-          </div>
-        </div>
-        <div>
-          <span className="benefit-icon">
-            <LocateFixed size={21} />
-          </span>
-          <div>
-            <strong>{locale === 'bn' ? 'পরবর্তী পদক্ষেপ নিন' : 'Take the next step'}</strong>
-            <p>
-              {locale === 'bn'
-                ? 'হেঁটে বা গাড়িতে যাওয়ার পথ'
-                : 'Choose walking or driving directions'}
-            </p>
-          </div>
-        </div>
-      </section> */}
-      <section className="catalogue-section" id="medicines">
-        {loading && <p role="status">{locale === 'bn' ? 'লোড হচ্ছে…' : 'Loading medicines…'}</p>}
-        {loadError && (
-          <p role="alert">
-            {loadError}{' '}
-            <button className="text-link" onClick={() => window.location.reload()}>
-              Retry
-            </button>
-          </p>
-        )}
-        <div className="section-heading">
-          <div>
-            {/* <span className="eyebrow">
-              {locale === 'bn' ? 'ওষুধের তালিকা' : 'THE MEDICINE DIRECTORY'}
-            </span> */}
-            <h2>{locale === 'bn' ? 'খুঁজে নিন আপনার ওষুধ' : 'A good place to start.'}</h2>
-            {/* <p className="muted">
-              {locale === 'bn'
-                ? 'প্রকাশিত ওষুধ ও তালিকাভুক্ত ফার্মেসি।'
-                : 'Published medicines and listed pharmacies.'}
-            </p> */}
-          </div>
-          <Badge tone="teal">
-            {medicines.filter((m) => m.status === 'Published').length}{' '}
-            {locale === 'bn' ? 'ওষুধ' : 'medicines'}
-          </Badge>
-        </div>
-        <div className="catalogue-controls">
-          <label className="search-box">
-            <Search size={19} />
-            <input
-              aria-label={t('search')}
-              placeholder={t('search')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <kbd>/</kbd>
-          </label>
-        </div>
-        <div className="category-tabs">
-          {categories.map((c, i) => (
-            <button
-              key={c}
-              className={category === c ? 'active' : ''}
-              onClick={() => setCategory(c)}
-            >
-              {locale === 'bn' && i === 0 ? 'সব ওষুধ' : c}
-            </button>
-          ))}
-        </div>
-        {!loading && !loadError && filtered.length === 0 ? (
-          <Empty title={t('empty')}>
-            <button
-              className="button button-outline"
-              onClick={() => {
-                setSearch('');
-                setCategory('All medicines');
-              }}
-            >
-              {t('reset')}
-            </button>
-          </Empty>
-        ) : (
-          <div className="medicine-grid">
-            {filtered.map((m) => (
-              <article className="medicine-card" key={m.id}>
-                <Link
-                  href={`/${locale}/medicines/${m.slug}`}
-                  aria-label={`${t('details')}: ${m.name}`}
-                >
-                  <MedicineArt medicine={m} />
-                </Link>
-                <div className="medicine-card-body">
-                  <div className="medicine-meta">
-                    <span>
-                      {locale === 'bn'
-                        ? {
-                            Tablet: 'ট্যাবলেট',
-                            Capsule: 'ক্যাপসুল',
-                            Sachet: 'স্যাশে',
-                            Suspension: 'সাসপেনশন',
-                          }[m.form] || m.form
-                        : m.form}
-                    </span>
-                    <span>{m.strength}</span>
-                  </div>
-                  <Link href={`/${locale}/medicines/${m.slug}`}>
-                    <h3>{locale === 'bn' ? m.nameBn || m.name : m.name}</h3>
-                  </Link>
-                  <p>{locale === 'bn' ? m.genericBn || m.generic : m.generic}</p>
-                  {locale === 'bn' && !m.nameBn && <Badge>English content fallback</Badge>}
-                  <div className="medicine-card-footer">
-                    <span>
-                      <MapPin size={14} />
-                      {locale === 'bn' ? 'ফার্মেসি খুঁজুন' : 'Find pharmacies'}
-                    </span>
-                    <Link
-                      href={`/${locale}/medicines/${m.slug}`}
-                      aria-label={`${t('details')}: ${m.name}`}
-                    >
-                      <ArrowUpRight size={20} />
-                    </Link>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-        {/* <p className="catalogue-note">
-          <ShieldCheck size={15} />
-          {locale === 'bn'
-            ? 'সংযুক্ত ফার্মেসির তালিকা ওষুধের মজুত নিশ্চিত করে না।'
-            : 'A pharmacy listing does not guarantee medicine availability. Contact the pharmacy to confirm.'}
-        </p> */}
-      </section>
-      {hasMore && (
-        <button className="button" onClick={() => setOffset(offset + 100)}>
-          Load more medicines
-        </button>
       )}
-      {/* <section className="how-section" id="how-it-works">
-        <div>
-          <span className="eyebrow">
-            {locale === 'bn' ? 'যেভাবে কাজ করে' : 'A SIMPLE NEXT STEP'}
-          </span>
-          <h2>{locale === 'bn' ? 'তিন ধাপে, যত্নের কাছে।' : 'Three steps. A little closer.'}</h2>
+
+      {active === 1 && (
+        <div className="hjp-card hjp-card-med">
+          <div className="hjp-med-header">
+            <div className="hjp-med-icon"><Pill size={22} /></div>
+            <div>
+              <strong>Napa Extra</strong>
+              <span>500mg / 65mg · Tablet</span>
+            </div>
+          </div>
+          <div className="hjp-med-generic">Paracetamol + Caffeine</div>
+          <div className="hjp-med-pharmacies">
+            <MapPin size={11} />
+            {bn ? '৫টি ফার্মেসিতে পাওয়া গেছে' : 'Found in 5 nearby pharmacies'}
+          </div>
         </div>
-        <div className="how-grid">
-          {[
-            {
-              n: '01',
-              icon: Pill,
-              title: locale === 'bn' ? 'ওষুধ খুঁজুন' : 'Find your medicine',
-              copy:
-                locale === 'bn'
-                  ? 'ওষুধের তথ্য ও বিস্তারিত দেখুন।'
-                  : 'Browse the directory and open medicine details.',
-            },
-            {
-              n: '02',
-              icon: MapPin,
-              title: locale === 'bn' ? 'শুরুর স্থান বেছে নিন' : 'Choose your starting point',
-              copy:
-                locale === 'bn'
-                  ? 'এলাকা বা নমুনা পিন দিয়ে শুরু করুন।'
-                  : 'Select an area or confirm a sample pin.',
-            },
-            {
-              n: '03',
-              icon: ArrowRight,
-              title: locale === 'bn' ? 'ফার্মেসি বেছে নিন' : 'Choose a pharmacy',
-              copy:
-                locale === 'bn'
-                  ? 'তালিকা দেখুন, তারপর পথ বেছে নিন।'
-                  : 'Explore the list, then choose your directions.',
-            },
-          ].map((s) => (
-            <div key={s.n} className="how-card">
-              <div>
-                <span>{s.n}</span>
-                <s.icon size={24} />
+      )}
+
+      {active === 2 && (
+        <div className="hjp-card hjp-card-route">
+          {PHARMACIES.slice(0, 2).map((p, i) => (
+            <div key={p.id} className={`hjp-route-row ${i === 0 ? 'hjp-route-row--top' : ''}`}>
+              <div className="hjp-route-dot" style={{ background: i === 0 ? '#16a34a' : '#94a3b8' }} />
+              <div className="hjp-route-info">
+                <span>{p.name}</span>
+                <small>{p.area}</small>
               </div>
-              <h3>{s.title}</h3>
-              <p>{s.copy}</p>
+              <div className="hjp-route-meta">
+                <span className="hjp-route-dist">{p.distanceKm} km</span>
+                <span className="hjp-route-time">
+                  <Footprints size={10} />{p.driveTimeMin}m
+                </span>
+              </div>
             </div>
           ))}
+          <div className="hjp-route-cta">
+            <Navigation size={13} />
+            {bn ? 'হেঁটে যাওয়ার পথ দেখুন' : 'Get walking directions'}
+          </div>
         </div>
-        <Link href={`/${locale}/privacy`} className="text-link">
-          {locale === 'bn' ? 'আপনার গোপনীয়তা সম্পর্কে জানুন' : 'Your privacy, at every step'}
-          <ChevronRight size={16} />
-        </Link>
-      </section> */}
-    </main>
+      )}
+    </div>
   );
 }
-function CrossIcon() {
-  return <Plus size={24} strokeWidth={3} />;
+
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN CATALOGUE
+═══════════════════════════════════════════════════════════ */
+export function Catalogue() {
+  const locale = useLocale();
+  const bn = locale === 'bn';
+  const t = useTranslations();
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [retry, setRetry] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { setQuery(search.trim()); setOffset(0); }, 220);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(false);
+    if (!offset) setMedicines([]);
+    api<(LiveMedicine & { total: number })[]>(
+      `public/medicines?limit=12&offset=${offset}&q=${encodeURIComponent(query)}`,
+      { signal: controller.signal },
+    )
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        const items = rows.map((m): Medicine => ({
+          id: m.id,
+          slug: m.slug,
+          name: m.name_en,
+          nameBn: m.name_bn,
+          generic: m.generic_en,
+          genericBn: m.generic_bn,
+          strength: m.strength,
+          form: m.form,
+          category: m.category,
+          status: 'Published',
+          color: 'mint',
+          pharmacies: 0,
+          imageFileId: m.image_file_id,
+        }));
+        setMedicines((prev) => (offset ? [...prev, ...items] : items));
+        setTotal(rows[0]?.total ?? 0);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) { setLoadError(true); setLoading(false); }
+      });
+    return () => controller.abort();
+  }, [query, offset, retry]);
+
+  const clear = () => { setSearch(''); setQuery(''); setOffset(0); };
+
+  return (
+    <main className="acme-landing">
+
+      {/* ═══════════════════════ HERO ═══════════════════════ */}
+      <section className="acme-hero h-[calc(100vh-122px)]" aria-labelledby="landing-heading">
+
+        {/* Left copy */}
+        <div className="acme-hero-copy h-full">
+
+          {/* Minimalist, classy Eyebrow */}
+
+
+          {/* Confident, authoritative headline */}
+          <h1 id="landing-heading" className="acme-hero-title">
+            {bn ? (
+              <>
+                প্রেসক্রিপশনের ওষুধ,
+                <br />
+                <span className="acme-highlight">নিকটস্থ সঠিক ফার্মেসিতে।</span>
+              </>
+            ) : (
+              <>
+                Prescription medicine,
+                <br />
+                <span className="acme-highlight">verified near you.</span>
+              </>
+            )}
+          </h1>
+
+          {/* Crisp, readable subtitle */}
+          <p className="acme-hero-desc">
+            {bn
+              ? 'ডাক্তারের প্রেসক্রিপশন কিউআর কোড স্ক্যান করুন অথবা ওষুধের নাম দিয়ে খুঁজুন। নিকটস্থ কোন ফার্মেসিতে ওষুধটি আছে দেখুন এবং সরাসরি প্রবেশপথের লাইভ পথনির্দেশনা পান।'
+              : 'Scan your doctor’s prescription QR card or search by medicine name. Instantly locate nearby pharmacies with verified stock and turn-by-turn routes straight to the entrance.'}
+          </p>
+
+          {/* High-Affordance Modern Search Box */}
+          <div className="acme-search-wrapper">
+            <form
+              className="acme-search-bar"
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setQuery(search.trim());
+                setOffset(0);
+                resultsRef.current?.focus({ preventScroll: true });
+                resultsRef.current?.scrollIntoView({ block: 'start' });
+              }}
+            >
+              <Search size={20} className="acme-search-icon" aria-hidden="true" />
+              <input
+                ref={searchRef}
+                type="search"
+                maxLength={200}
+                aria-label={t('search')}
+                placeholder={bn ? 'ওষুধ বা জেনেরিক নাম লিখুন…' : 'Enter medicine or generic name…'}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="acme-search-clear"
+                  aria-label={bn ? 'মুছুন' : 'Clear'}
+                  onClick={() => { clear(); searchRef.current?.focus(); }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+              <button className="acme-search-btn" type="submit">
+                <span>{bn ? 'ওষুধ খুঁজুন' : 'Search'}</span>
+                <ArrowRight size={16} />
+              </button>
+            </form>
+
+            {/* Clean Secondary Action Bar: Quick Tags + Scan QR Card Link */}
+            <div className="acme-subrow">
+              <div className="acme-quick-group">
+                <span className="acme-quick-label">{bn ? 'যেমন:' : 'Popular:'}</span>
+                {['Napa Extra', 'Monas 10', 'Ventolin', 'Nexum'].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="acme-quick-pill"
+                    onClick={() => {
+                      setSearch(tag);
+                      setQuery(tag);
+                      setOffset(0);
+                    }}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+
+              <Link href={`/${locale}/q/demo`} className="acme-qr-trigger">
+                <QrCode size={15} />
+                <span>{bn ? 'QR কার্ড স্ক্যান' : 'Scan QR Card'}</span>
+              </Link>
+            </div>
+          </div>
+
+
+        </div>
+
+        {/* Right: animated journey preview */}
+        <div className="acme-hero-visual" aria-hidden="true">
+          <JourneyPreview bn={bn} />
+        </div>
+
+      </section>
+
+      {/* ═══════════════════════════════════════════════════
+          CATALOGUE (preserved, commented for later)
+      ═══════════════════════════════════════════════════ */}
+      {/* <section
+        className="acme-catalogue"
+        id="medicines"
+        ref={resultsRef}
+        tabIndex={-1}
+        aria-labelledby="medicines-heading"
+        aria-busy={loading}
+      >
+        ...
+      </section> */}
+
+    </main>
+  );
 }

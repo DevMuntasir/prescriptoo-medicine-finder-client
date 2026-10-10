@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Cross, ArrowUpRight, Menu, X } from 'lucide-react';
@@ -21,15 +22,37 @@ export function PatientShell({ children, locale }: { children: ReactNode; locale
   const [menu, setMenu] = useState(false);
   const other = locale === 'en' ? 'bn' : 'en';
   const focused = path.endsWith('/locator');
+  const landing = path === `/${locale}` || path === `/${locale}/`;
+  const brand = landing ? (
+    <span className="acme-brand">
+      <Image
+        src="/acme-logo.png"
+        alt="The ACME Laboratories Ltd."
+        width={250}
+        height={59}
+        priority
+      />
+      <span>
+        MEDICINE
+        <br />
+        LOCATOR
+      </span>
+    </span>
+  ) : (
+    <Brand />
+  );
   return (
-    <>
+    <div className={landing ? 'acme-shell' : undefined}>
       {/* <div className="demo-bar">
         <span className="demo-dot" />
         {locale === 'bn' ? 'ফার্মেসি খুঁজুন · মজুতের তথ্য দোকানে নিশ্চিত করুন' : 'Find listed pharmacies · confirm stock with the shop'}
       </div> */}
       <header className={`patient-header ${focused ? 'focused-header' : ''}`}>
-        <Link href={`/${locale}`} aria-label="Prescriptoo home">
-          <Brand />
+        <Link
+          href={`/${locale}`}
+          aria-label={landing ? 'ACME medicine locator home' : 'Prescriptoo home'}
+        >
+          {brand}
         </Link>
         {focused ? (
           <Link className="language-switch" href={path.replace(`/${locale}`, `/${other}`)}>
@@ -40,11 +63,13 @@ export function PatientShell({ children, locale }: { children: ReactNode; locale
             <button
               className="mobile-menu icon-button"
               aria-label="Toggle navigation"
+              aria-expanded={menu}
+              aria-controls="patient-navigation"
               onClick={() => setMenu(!menu)}
             >
               {menu ? <X /> : <Menu />}
             </button>
-            <nav className={menu ? 'patient-nav open' : 'patient-nav'}>
+            <nav id="patient-navigation" className={menu ? 'patient-nav open' : 'patient-nav'}>
               <Link onClick={() => setMenu(false)} href={`/${locale}#medicines`}>
                 {t('catalogue')}
               </Link>
@@ -69,16 +94,22 @@ export function PatientShell({ children, locale }: { children: ReactNode; locale
       {!focused && (
         <footer className="patient-footer">
           <div>
-            <Brand />
-            <p>{t('footer')}</p>
+            {brand}
+            <p>
+              {landing
+                ? locale === 'bn'
+                  ? 'আপনার যত্নের পথে।'
+                  : 'A little closer to care.'
+                : t('footer')}
+            </p>
           </div>
           <div className="footer-links">
             <Link href={`/${locale}/privacy`}>{t('privacy')}</Link>
             <Link href={`/${locale}/terms`}>{locale === 'bn' ? 'শর্তাবলি' : 'Terms'}</Link>
-            <span>© 2026 · Prescriptoo</span>
+            <span>© 2026 · {landing ? 'The ACME Laboratories Ltd.' : 'Prescriptoo'}</span>
           </div>
         </footer>
       )}
-    </>
+    </div>
   );
 }
